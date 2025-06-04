@@ -1,0 +1,209 @@
+{
+    "privileges": [],
+    "dataRoles": [
+        {
+            "name": "taskId",
+            "kind": "Grouping",
+            "displayName": "Task ID",
+            "description": "Unique identifier for each task"
+        },
+        {
+            "name": "duration",
+            "kind": "Measure",
+            "displayName": "Duration (Work Days)",
+            "description": "Task duration in work days for CPM calc"
+        },
+        {
+            "name": "startDate",
+            "displayName": "Start Date",
+            "kind": "GroupingOrMeasure",
+            "description": "Actual/Forecast start date for plotting"
+        },
+        {
+            "name": "finishDate",
+            "displayName": "Finish Date",
+            "kind": "GroupingOrMeasure",
+            "description": "Actual/Forecast finish date for plotting"
+        },
+        {
+            "name": "taskName",
+            "kind": "Grouping",
+            "displayName": "Task Name",
+            "description": "Name or description of the task"
+        },
+        {
+            "name": "taskType",
+            "kind": "Grouping",
+            "displayName": "Task Type",
+            "description": "Type of task (TT_Task, TT_Mile, TT_FinMile)"
+        },
+        {
+            "name": "predecessorId",
+            "kind": "Grouping",
+            "displayName": "Predecessor ID",
+            "description": "ID of predecessor task"
+        },
+        {
+            "name": "relationshipType",
+            "kind": "Grouping",
+            "displayName": "Relationship Type",
+            "description": "Relationship type (FS, SS, FF, SF)"
+        },
+        {
+            "name": "relationshipFreeFloat",
+            "kind": "Measure",
+            "displayName": "Relationship Free Float",
+            "description": "Free float of the relationship (optional)"
+        },
+        {
+            "name": "relationshipLag",
+            "kind": "Measure",
+            "displayName": "Relationship Lag",
+            "description": "Lag or lead time (negative lag) for relationship in work days"
+        },
+        {
+            "name": "tooltip",
+            "kind": "Grouping",
+            "displayName": "Tooltip",
+            "description": "Additional fields to display in tooltips"
+        }
+    ],
+    "objects": {
+        "taskAppearance": {
+            "displayName": "Task Appearance",
+            "properties": {
+                "taskColor": { "displayName": "Non-Critical Task Color", "type": { "fill": { "solid": { "color": true } } } },
+                "criticalPathColor": { "displayName": "Critical Path Color", "type": { "fill": { "solid": { "color": true } } } },
+                "milestoneColor": { "displayName": "Milestone Color", "type": { "fill": { "solid": { "color": true } } } },
+                "taskHeight": { "displayName": "Task Height", "type": { "numeric": true } },
+                "milestoneSize": { "displayName": "Milestone Size", "description": "Size of milestone markers (px)", "type": { "numeric": true } }
+            }
+        },
+        "connectorLines": {
+            "displayName": "Connector Lines",
+            "properties": {
+                "showConnectorToggle": { 
+                    "displayName": "Show Connector Toggle Button", 
+                    "description": "Show or hide the connector lines toggle button in the header", 
+                    "type": { "bool": true } 
+                },
+                "connectorColor": { "displayName": "Connector Color", "type": { "fill": { "solid": { "color": true } } } },
+                "connectorWidth": { "displayName": "Connector Width", "type": { "numeric": true } },
+                "criticalConnectorWidth": { "displayName": "Critical Width", "type": { "numeric": true } },
+                "elbowOffset": { 
+                    "displayName": "Elbow Offset", 
+                    "description": "Controls the distance of connector line bends",
+                    "type": { "numeric": true } 
+                }
+            }
+        },
+        "taskSelection": {
+            "displayName": "Task Selection",
+            "properties": {
+                "enableTaskSelection": { "displayName": "Enable Task Selection", "type": { "bool": true } },
+                "dropdownWidth": { "displayName": "Dropdown Width", "type": { "numeric": true } },
+                "dropdownPosition": { "displayName": "Position", "type": { "enumeration": [
+                    { "value": "top", "displayName": "Top" },
+                    { "value": "topRight", "displayName": "Top Right" },
+                    { "value": "topLeft", "displayName": "Top Left" }
+                ] } },
+             "showSelectedTaskLabel": { "displayName": "Show Selected Task Label", "type": { "bool": true } },
+             "traceMode": {
+            "displayName": "Trace Mode", 
+            "description": "Select whether to trace critical path backward to or forward from the selected task",
+            "type": { 
+                "enumeration": [
+                    { "value": "backward", "displayName": "Trace Backward" },
+                    { "value": "forward", "displayName": "Trace Forward" }
+                ] 
+            }
+          }
+       }
+      },
+        "textAndLabels": {
+            "displayName": "Text & Labels",
+            "properties": {
+                "fontSize": { "displayName": "General Font Size (Dates/Duration)", "description": "Base font size for finish dates and duration text", "type": { "numeric": true } },
+                "taskNameFontSize": { "displayName": "Task Name Font Size (pt)", "description": "Font size for task names in the left margin", "type": { "numeric": true } },
+                "labelColor": { "displayName": "Label Color", "description": "Color for task name and date labels", "type": { "fill": { "solid": { "color": true } } } },
+                "showDuration": { "displayName": "Show Duration (CPM)", "description": "Display calculated CPM duration text inside task bars", "type": { "bool": true } },
+                "showFinishDates": { "displayName": "Show Finish Dates", "description": "Display finish date labels next to tasks/milestones", "type": { "bool": true } },
+                "dateBackgroundColor": { "displayName": "Date Background Color", "description": "Set the background color for finish date labels", "type": { "fill": { "solid": { "color": true } } } },
+                "dateBackgroundTransparency": { "displayName": "Date Background Transparency (%)", "description": "Set the transparency (0=Opaque, 100=Invisible)", "type": { "numeric": true } }
+            }
+        },
+        "layoutSettings": {
+            "displayName": "Layout",
+            "properties": {
+                "leftMargin": { "displayName": "Left Margin", "type": { "numeric": true } },
+                "taskPadding": { "displayName": "Task Padding", "type": { "numeric": true } },
+                "maxTasksToShow": { "displayName": "Max Tasks To Show", "type": { "numeric": true } }
+            }
+        },
+        "gridLines": {
+            "displayName": "Horizontal Grid Lines",
+            "properties": {
+                "showGridLines": { "displayName": "Show Horizontal Lines", "type": { "bool": true } },
+                "gridLineColor": { "displayName": "Color", "type": { "fill": { "solid": { "color": true } } } },
+                "gridLineWidth": { "displayName": "Width (px)", "type": { "numeric": true } },
+                "gridLineStyle": { "displayName": "Style", "type": { "enumeration": [ { "value": "solid", "displayName": "Solid" }, { "value": "dashed", "displayName": "Dashed" }, { "value": "dotted", "displayName": "Dotted" } ] } }
+            }
+        },
+        "verticalGridLines": {
+            "displayName": "Vertical Grid Lines (Monthly)",
+            "properties": {
+                "show": { "displayName": "Show Vertical Lines", "type": { "bool": true } },
+                "lineColor": { "displayName": "Color", "type": { "fill": { "solid": { "color": true } } } },
+                "lineWidth": { "displayName": "Width (px)", "type": { "numeric": true } },
+                "lineStyle": { "displayName": "Style", "type": { "enumeration": [ { "value": "solid", "displayName": "Solid" }, { "value": "dashed", "displayName": "Dashed" }, { "value": "dotted", "displayName": "Dotted" } ] } },
+                "showMonthLabels": { "displayName": "Show Month Labels", "type": { "bool": true } },
+                 "labelColor": { "displayName": "Label Color", "description": "Color for month labels (defaults to line color if unset)", "type": { "fill": { "solid": { "color": true } } } },
+                 "labelFontSize": { "displayName": "Label Font Size (pt)", "description": "Font size for month labels (defaults to general font size if 0)", "type": { "numeric": true } }
+            }
+        },
+        "projectEndLine": {
+            "displayName": "Project End Line",
+            "properties": {
+                 "show": { "displayName": "Show Line", "description": "Show the vertical line indicating latest finish date", "type": { "bool": true } },
+                 "lineColor": { "displayName": "Color", "description": "Color of the project end line and label", "type": { "fill": { "solid": { "color": true } } } },
+                 "lineWidth": { "displayName": "Width (px)", "description": "Width of the project end line", "type": { "numeric": true } },
+                 "lineStyle": { "displayName": "Style", "description": "Style of the project end line", "type": { "enumeration": [ { "value": "solid", "displayName": "Solid" }, { "value": "dashed", "displayName": "Dashed" }, { "value": "dotted", "displayName": "Dotted" } ] } }
+            }
+        },
+        "displayOptions": {
+            "displayName": "Display Options",
+            "properties": {
+                "showTooltips": { "displayName": "Show Tooltips", "type": { "bool": true } }
+            }
+        }
+    },
+    "dataViewMappings": [
+        {
+            "table": {
+                "rows": {
+                    "select": [
+                        { "bind": { "to": "taskId" } },
+                        { "bind": { "to": "duration" } },
+                        { "bind": { "to": "startDate" } },
+                        { "bind": { "to": "finishDate" } },
+                        { "bind": { "to": "taskName" } },
+                        { "bind": { "to": "taskType" } },
+                        { "bind": { "to": "predecessorId" } },
+                        { "bind": { "to": "relationshipType" } },
+                        { "bind": { "to": "relationshipFreeFloat" } },
+                        { "bind": { "to": "relationshipLag" } },
+                        { "bind": { "to": "tooltip" } }
+                    ],
+                    "dataReductionAlgorithm": { "top": { "count": 60000 } }
+                }
+            }
+        }
+    ],
+    "supportsHighlight": false,
+    "sorting": { "default": {} },
+    "supportsLandingPage": false,
+    "supportsKeyboardFocus": false,
+    "supportsMultiVisualSelection": false,
+    "supportsEmptyDataView": false,
+    "suppressDefaultTitle": false
+}

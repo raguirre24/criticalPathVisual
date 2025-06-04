@@ -1,0 +1,79 @@
+// Import normalize.css (optional but good practice)
+// @import (less) "node_modules/normalize.css/normalize.css";
+
+// Base styles for the visual container
+.criticalPathVisual {
+    font-family: 'Segoe UI', wf_segoe-ui_normal, helvetica, arial, sans-serif;
+    overflow: visible; // Allow elements like labels to go outside the main SVG bounds if needed
+  }
+  
+  // Styles for SVG text elements (labels, dates, etc.)
+  text {
+    fill: #333; // Default text color
+    dominant-baseline: middle; // Vertically center text
+    text-anchor: start; // Align text to the start (left)
+  }
+  
+  // Specific style for task duration text inside bars
+  .task-duration-text {
+    fill: white;
+    font-size: 9px;
+    font-weight: bold;
+    text-anchor: middle; // Center text horizontally
+    dominant-baseline: middle;
+    pointer-events: none; // Prevent text from blocking mouse events on the bar
+  }
+  
+  // Style for the project end line text
+  .project-end-text {
+      font-size: 11px;
+      font-weight: bold;
+      text-anchor: end; // Align to the right of the line position
+  }
+  
+  // Style for the project duration text at the bottom
+  .project-duration-text {
+      font-size: 12px;
+      font-weight: bold;
+      text-anchor: middle; // Center align
+  }
+  
+  // Style for task labels (left side)
+  .task-label {
+      font-size: 11px; // Default, can be overridden by format pane
+      text-anchor: end; // Align to the right, before the chart starts
+  }
+  
+  // Style for finish date labels (right side)
+  .finish-date-label {
+      font-size: 11px; // Default, can be overridden by format pane
+      text-anchor: start; // Align to the left, after the bar/milestone
+  }
+  
+  // Style for milestone shapes (e.g., diamonds)
+  .milestone-shape {
+      stroke: #333;
+      stroke-width: 1px;
+  }
+  
+  // Style for task bars
+  .task-bar {
+      stroke: #333;
+      stroke-width: 0.5px;
+  }
+  
+  // Style for dependency arrows
+  .dependency-arrow {
+      stroke-width: 1.5px;
+      fill: none; // Arrows are typically lines/paths, no fill needed
+  }
+  
+  .dependency-arrow-critical {
+      stroke-width: 2px; // Make critical arrows slightly thicker
+  }
+  
+  // Style for the project end line
+  .project-end-line {
+      stroke-dasharray: 4, 2; // Dashed line style
+      stroke-width: 1.5px;
+  }

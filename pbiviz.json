@@ -1,0 +1,22 @@
+{
+  "visual": {
+    "name": "criticalPathVisual",
+    "displayName": "Critical Path Visual",
+    "guid": "criticalPathVisualGUID_REPLACE_THIS_LATER",
+    "visualClassName": "Visual",
+    "version": "1.0.0.0",
+    "description": "Displays the critical path (longest path) of tasks using CPM analysis.",
+    "supportUrl": "https://github.com/your-repo",
+    "gitHubUrl": "https://github.com/your-repo"
+  },
+  "apiVersion": "5.11.0",
+  "author": {
+    "name": "Your Name",
+    "email": "your.email@example.com"
+  },
+  "assets": {
+    "icon": "assets/icon.png"
+  },
+  "style": "style/visual.less",
+  "capabilities": "capabilities.json"
+}
