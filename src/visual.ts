@@ -146,6 +146,7 @@ export class Visual implements IVisual {
     private renderStartTime: number = 0;
     private renderBatchTimer: number | null = null;
     private renderQueue: Set<string> = new Set();
+    private cpmWorker: Worker | null = null;
     
     // Enhanced data structures for performance
     private predecessorIndex: Map<string, Set<string>> = new Map(); // taskId -> Set of tasks that have this as predecessor
@@ -979,9 +980,13 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions) {
+        void this.updateInternal(options);
+    }
+
+    private async updateInternal(options: VisualUpdateOptions) {
         console.log("--- Visual Update Start ---");
         this.renderStartTime = performance.now();
-        
+
         try {
             // Determine update type for optimization
             const updateType = this.determineUpdateType(options);
@@ -1088,8 +1093,8 @@ export class Visual implements IVisual {
                     console.log(`Identified ${tasksInPathToTarget.size} total tasks that lead to target task ${this.selectedTaskId}`);
                 }
             } else {
-                // Calculate standard critical path with optimized method
-                this.calculateCPM();
+                // Calculate standard critical path with optimized method off-thread
+                await this.calculateCPMOffThread();
                 console.log(`CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks.`);
             }
     
@@ -3023,6 +3028,71 @@ private detectAndReportCycles(): {hasCycles: boolean, cyclicTasks: Set<string>, 
         cyclicTasks,
         cycleDetails
     };
+}
+
+private ensureCpmWorker(): void {
+    if (!this.cpmWorker) {
+        try {
+            this.cpmWorker = new Worker("cpmWorker.js");
+        } catch (e) {
+            console.error("Failed to create CPM worker:", e);
+            this.cpmWorker = null;
+        }
+    }
+}
+
+private calculateCPMOffThread(): Promise<void> {
+    this.ensureCpmWorker();
+    if (!this.cpmWorker) {
+        this.calculateCPM();
+        return Promise.resolve();
+    }
+    return new Promise(resolve => {
+        const handler = (event: MessageEvent) => {
+            const { tasks, relationships } = event.data;
+            this.cpmWorker!.removeEventListener('message', handler);
+            tasks.forEach((res: any) => {
+                const task = this.taskIdToTask.get(res.internalId);
+                if (task) {
+                    task.earlyStart = res.earlyStart;
+                    task.earlyFinish = res.earlyFinish;
+                    task.lateStart = res.lateStart;
+                    task.lateFinish = res.lateFinish;
+                    task.totalFloat = res.totalFloat;
+                    task.isCritical = res.isCritical;
+                    task.isCriticalByFloat = res.isCriticalByFloat;
+                    task.isCriticalByRel = res.isCriticalByRel;
+                    task.isNearCritical = res.isNearCritical;
+                }
+            });
+            relationships.forEach((relRes: any) => {
+                const rel = this.relationships.find(r => r.predecessorId === relRes.predecessorId && r.successorId === relRes.successorId);
+                if (rel) {
+                    rel.isCritical = relRes.isCritical;
+                }
+            });
+            resolve();
+        };
+        this.cpmWorker!.addEventListener('message', handler);
+        this.cpmWorker!.postMessage({
+            tasks: this.allTasksData.map(t => ({
+                internalId: t.internalId,
+                duration: t.duration,
+                predecessorIds: t.predecessorIds,
+                relationshipTypes: t.relationshipTypes,
+                relationshipLags: t.relationshipLags,
+            })),
+            relationships: this.relationships.map(r => ({
+                predecessorId: r.predecessorId,
+                successorId: r.successorId,
+                type: r.type,
+                freeFloat: r.freeFloat,
+                lag: r.lag,
+            })),
+            floatTolerance: this.floatTolerance,
+            floatThreshold: this.floatThreshold,
+        });
+    });
 }
 
 private calculateCPM(): void {
