@@ -226,7 +226,7 @@ class TaskSelectionCard extends Card {
 
 class PersistedStateCard extends Card {
     name: string = "persistedState"; displayName: string = "Persisted State";
-    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "" });
+    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "", placeholder: "" });
     floatThreshold = new NumUpDown({ name: "floatThreshold", displayName: "", value: 0 });
     slices: Slice[] = [this.selectedTaskId, this.floatThreshold];
 }
