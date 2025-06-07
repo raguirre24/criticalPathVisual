@@ -11,6 +11,7 @@ import ColorPicker = formattingSettings.ColorPicker;
 import NumUpDown = formattingSettings.NumUpDown;
 import ToggleSwitch = formattingSettings.ToggleSwitch;
 import ItemDropdown = formattingSettings.ItemDropdown;
+import TextInput = formattingSettings.TextInput;
 
 // Shared line style options
 const lineStyleItems: powerbi.IEnumMember[] = [
@@ -215,12 +216,19 @@ class TaskSelectionCard extends Card {
     });
     
     slices: Slice[] = [
-        this.enableTaskSelection, 
-        this.dropdownWidth, 
+        this.enableTaskSelection,
+        this.dropdownWidth,
         this.dropdownPosition,
         this.showSelectedTaskLabel,
         this.traceMode
     ];
+}
+
+class PersistedStateCard extends Card {
+    name: string = "persistedState"; displayName: string = "Persisted State";
+    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "" });
+    floatThreshold = new NumUpDown({ name: "floatThreshold", displayName: "", value: 0 });
+    slices: Slice[] = [this.selectedTaskId, this.floatThreshold];
 }
 
 // Main VisualSettings class 
@@ -235,6 +243,7 @@ export class VisualSettings extends Model {
     projectEndLine = new ProjectEndLineCard();
     displayOptions = new DisplayOptionsCard();
     taskSelection = new TaskSelectionCard(); // Add the new card
+    persistedState = new PersistedStateCard();
     // REMOVED: performanceOptions
 
     // Add the new card to the cards array
