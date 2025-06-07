@@ -595,6 +595,7 @@ export class Visual implements IVisual {
             console.log("Internal Toggle method called!");
             this.showAllTasksInternal = !this.showAllTasksInternal;
             console.log("New internal showAllTasksInternal value:", this.showAllTasksInternal);
+            this.host.persistProperties({ merge: [{ objectName: "displayOptions", properties: { showAllTasks: this.showAllTasksInternal }, selector: null }] });
     
             if (this.toggleButtonGroup) {
                 this.toggleButtonGroup.select("text")
@@ -949,7 +950,8 @@ export class Visual implements IVisual {
         this.floatThresholdInput.on("input", function() {
             const inputValue = parseFloat((this as HTMLInputElement).value);
             self.floatThreshold = isNaN(inputValue) ? 0 : Math.max(0, inputValue);
-            
+            self.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { floatThreshold: self.floatThreshold }, selector: null }] });
+
             if (self.lastUpdateOptions) {
                 self.update(self.lastUpdateOptions);
             }
@@ -1026,11 +1028,14 @@ export class Visual implements IVisual {
     
             if (this.isInitialLoad) {
                 if (this.settings?.displayOptions?.showAllTasks !== undefined) {
-                     this.showAllTasksInternal = this.settings.displayOptions.showAllTasks.value;
-                     console.log(`Initial load: Setting internal state 'showAllTasksInternal' from persisted setting value: ${this.showAllTasksInternal}`);
-                 } else {
-                     console.log(`Initial load: Persisted 'showAllTasks' setting not found, using default internal state: ${this.showAllTasksInternal}`);
-                 }
+                    this.showAllTasksInternal = this.settings.displayOptions.showAllTasks.value;
+                }
+                if (this.settings?.persistedState?.selectedTaskId !== undefined) {
+                    this.selectedTaskId = this.settings.persistedState.selectedTaskId.value || null;
+                }
+                if (this.settings?.persistedState?.floatThreshold !== undefined) {
+                    this.floatThreshold = this.settings.persistedState.floatThreshold.value;
+                }
                 this.isInitialLoad = false;
             }
     
@@ -4981,6 +4986,7 @@ private selectTask(taskId: string | null, taskName: string | null): void {
     
     this.selectedTaskId = taskId;
     this.selectedTaskName = taskName;
+    this.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { selectedTaskId: this.selectedTaskId || "" }, selector: null }] });
     
     // Clear dropdown input when deselecting
     if (!taskId && this.dropdownInput) {

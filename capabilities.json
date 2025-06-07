@@ -173,7 +173,15 @@
         "displayOptions": {
             "displayName": "Display Options",
             "properties": {
-                "showTooltips": { "displayName": "Show Tooltips", "type": { "bool": true } }
+                "showTooltips": { "displayName": "Show Tooltips", "type": { "bool": true } },
+                "showAllTasks": { "type": { "bool": true } }
+            }
+        },
+        "persistedState": {
+            "displayName": "Persisted State",
+            "properties": {
+                "selectedTaskId": { "type": { "text": true } },
+                "floatThreshold": { "type": { "numeric": true } }
             }
         }
     },
