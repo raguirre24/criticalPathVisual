@@ -156,16 +156,17 @@ class DisplayOptionsCard extends Card {
     name: string = "displayOptions"; displayName: string = "Display Options";
     showTooltips = new ToggleSwitch({ name: "showTooltips", displayName: "Show Tooltips", value: true });
 
-    // Keep the property definition for potential initial sync in update()
+    // Hidden property used only for persisting the toggle state
     showAllTasks = new ToggleSwitch({
         name: "showAllTasks",
-        displayName: "", // No display name as it won't show
-        description: "", // No description
-        value: false // Default value IF used for initial sync
+        displayName: "",
+        description: "",
+        value: false,
+        visible: false
     });
 
-    // *** IMPORTANT: Remove showAllTasks from the slices array ***
-    slices: Slice[] = [this.showTooltips];
+    // Include hidden slice so formatting service reads persisted value
+    slices: Slice[] = [this.showTooltips, this.showAllTasks];
 }
 
 class TaskSelectionCard extends Card {
@@ -226,8 +227,9 @@ class TaskSelectionCard extends Card {
 
 class PersistedStateCard extends Card {
     name: string = "persistedState"; displayName: string = "Persisted State";
-    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "" });
-    floatThreshold = new NumUpDown({ name: "floatThreshold", displayName: "", value: 0 });
+    visible: boolean = false;
+    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "", visible: false });
+    floatThreshold = new NumUpDown({ name: "floatThreshold", displayName: "", value: 0, visible: false });
     slices: Slice[] = [this.selectedTaskId, this.floatThreshold];
 }
 
@@ -256,7 +258,8 @@ export class VisualSettings extends Model {
         this.verticalGridLines,
         this.projectEndLine,
         this.displayOptions,
-        this.taskSelection
+        this.taskSelection,
+        this.persistedState
         // REMOVED: performanceOptions from array
     ];
 }
