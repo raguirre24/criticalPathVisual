@@ -1036,6 +1036,10 @@ export class Visual implements IVisual {
                 if (this.settings?.persistedState?.floatThreshold !== undefined) {
                     this.floatThreshold = this.settings.persistedState.floatThreshold.value;
                 }
+                if (this.settings?.persistedState?.traceMode !== undefined) {
+                    const persistedMode = this.settings.persistedState.traceMode.value;
+                    this.traceMode = persistedMode ? persistedMode : "backward";
+                }
                 this.isInitialLoad = false;
             }
     
@@ -4931,6 +4935,7 @@ private createTraceModeToggle(): void {
         backwardButton.on("click", function() {
             if (self.traceMode !== "backward") {
                 self.traceMode = "backward";
+                self.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { traceMode: self.traceMode }, selector: null }] });
                 self.createTraceModeToggle(); // Refresh toggle appearance
                 
                 // Trigger recalculation
@@ -4943,6 +4948,7 @@ private createTraceModeToggle(): void {
         forwardButton.on("click", function() {
             if (self.traceMode !== "forward") {
                 self.traceMode = "forward";
+                self.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { traceMode: self.traceMode }, selector: null }] });
                 self.createTraceModeToggle(); // Refresh toggle appearance
                 
                 // Trigger recalculation
