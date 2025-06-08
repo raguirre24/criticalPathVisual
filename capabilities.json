@@ -181,7 +181,8 @@
             "displayName": "Persisted State",
             "properties": {
                 "selectedTaskId": { "type": { "text": true } },
-                "floatThreshold": { "type": { "numeric": true } }
+                "floatThreshold": { "type": { "numeric": true } },
+                "traceMode": { "type": { "text": true } }
             }
         }
     },
