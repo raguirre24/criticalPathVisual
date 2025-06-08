@@ -1036,6 +1036,10 @@ export class Visual implements IVisual {
                 if (this.settings?.persistedState?.floatThreshold !== undefined) {
                     this.floatThreshold = this.settings.persistedState.floatThreshold.value;
                 }
+                if (this.settings?.persistedState?.traceMode !== undefined) {
+                    const persistedMode = this.settings.persistedState.traceMode.value;
+                    this.traceMode = persistedMode ? persistedMode : "backward";
+                }
                 this.isInitialLoad = false;
             }
     
@@ -1063,8 +1067,34 @@ export class Visual implements IVisual {
             }
             console.log(`Transformed ${this.allTasksData.length} tasks.`);
     
+            // Restore selected task name after data is loaded
+            if (this.selectedTaskId) {
+                const selectedTask = this.taskIdToTask.get(this.selectedTaskId);
+                this.selectedTaskName = selectedTask ? selectedTask.name || null : null;
+            }
+
             // Create or update the task selection dropdown
             this.createTaskSelectionDropdown();
+
+            // Populate input with the persisted task name if available
+            if (this.dropdownInput) {
+                if (this.selectedTaskId) {
+                    this.dropdownInput.property("value", this.selectedTaskName || "");
+                } else {
+                    this.dropdownInput.property("value", "");
+                }
+            }
+
+            if (this.selectedTaskLabel) {
+                if (this.selectedTaskId && this.selectedTaskName && this.settings.taskSelection.showSelectedTaskLabel.value) {
+                    this.selectedTaskLabel
+                        .style("display", "block")
+                        .text(`Selected: ${this.selectedTaskName}`);
+                } else {
+                    this.selectedTaskLabel.style("display", "none");
+                }
+            }
+
             this.populateTaskDropdown();
             this.createTraceModeToggle();
             
@@ -4931,6 +4961,7 @@ private createTraceModeToggle(): void {
         backwardButton.on("click", function() {
             if (self.traceMode !== "backward") {
                 self.traceMode = "backward";
+                self.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { traceMode: self.traceMode }, selector: null }] });
                 self.createTraceModeToggle(); // Refresh toggle appearance
                 
                 // Trigger recalculation
@@ -4943,6 +4974,7 @@ private createTraceModeToggle(): void {
         forwardButton.on("click", function() {
             if (self.traceMode !== "forward") {
                 self.traceMode = "forward";
+                self.host.persistProperties({ merge: [{ objectName: "persistedState", properties: { traceMode: self.traceMode }, selector: null }] });
                 self.createTraceModeToggle(); // Refresh toggle appearance
                 
                 // Trigger recalculation
