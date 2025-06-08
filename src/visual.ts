@@ -15,6 +15,8 @@ import PrimitiveValue = powerbi.PrimitiveValue;
 
 import { VisualSettings } from "./settings";
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
+import { IBasicFilter } from "powerbi-models";
+import FilterAction = powerbi.FilterAction;
 
 // --- Update Task Interface to include tooltipData ---
 interface Task {
@@ -90,6 +92,9 @@ export class Visual implements IVisual {
     private allTasksData: Task[] = [];
     private relationships: Relationship[] = [];
     private taskIdToTask: Map<string, Task> = new Map();
+    private taskIdQueryName: string | null = null;
+    private taskIdTable: string | null = null;
+    private taskIdColumn: string | null = null;
     private lastUpdateOptions: VisualUpdateOptions | null = null;
 
     // Connect lines toggle state and group
@@ -587,6 +592,7 @@ export class Visual implements IVisual {
 
     public destroy(): void {
         this.tooltipDiv?.remove();
+        this.applyTaskFilter([]);
         console.log("Critical Path Visual destroyed.");
     }
 
@@ -1227,6 +1233,7 @@ export class Visual implements IVisual {
             tasksToPlot.forEach((task, index) => { task.yOrder = index; });
             const tasksToShow = tasksToPlot;
             console.log("Assigned yOrder to tasks for plotting.");
+            this.applyTaskFilter(tasksToShow.map(t => t.id));
     
             // --- Calculate dimensions and scales ---
             const taskHeight = this.settings.taskAppearance.taskHeight.value;
@@ -4242,6 +4249,21 @@ private transformDataOptimized(dataView: DataView): void {
 
     // Get column indices once
     const idIdx = this.getColumnIndex(dataView, 'taskId');
+    if (idIdx !== -1) {
+        this.taskIdQueryName = dataView.metadata.columns[idIdx].queryName || null;
+        const match = this.taskIdQueryName ? this.taskIdQueryName.match(/([^\[]+)\[([^\]]+)\]/) : null;
+        if (match) {
+            this.taskIdTable = match[1];
+            this.taskIdColumn = match[2];
+        } else if (this.taskIdQueryName) {
+            const parts = this.taskIdQueryName.split('.');
+            this.taskIdTable = parts.length > 1 ? parts[0] : null;
+            this.taskIdColumn = parts[parts.length - 1];
+        } else {
+            this.taskIdTable = null;
+            this.taskIdColumn = null;
+        }
+    }
     const predIdIdx = this.getColumnIndex(dataView, 'predecessorId');
     const relTypeIdx = this.getColumnIndex(dataView, 'relationshipType');
     const relFloatIdx = this.getColumnIndex(dataView, 'relationshipFreeFloat');
@@ -4635,6 +4657,24 @@ private transformDataOptimized(dataView: DataView): void {
     
         console.log(`Final limited task count: ${tasksToShow.length}`);
         return tasksToShow;
+    }
+
+    private applyTaskFilter(taskIds: (string | number)[]): void {
+        if (!this.taskIdTable || !this.taskIdColumn) return;
+
+        const filter: IBasicFilter = {
+            // eslint-disable-next-line powerbi-visuals/no-http-string
+            $schema: "http://powerbi.com/product/schema#basic",
+            target: {
+                table: this.taskIdTable,
+                column: this.taskIdColumn
+            },
+            operator: "In",
+            values: taskIds
+        };
+
+        const action = taskIds.length > 0 ? FilterAction.merge : FilterAction.remove;
+        this.host.applyJsonFilter(filter, "general", "taskFilter", action);
     }
 
     private displayMessage(message: string): void {
