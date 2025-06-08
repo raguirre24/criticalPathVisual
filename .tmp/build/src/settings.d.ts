@@ -89,6 +89,13 @@ declare class TaskSelectionCard extends Card {
     traceMode: formattingSettings.ItemDropdown;
     slices: Slice[];
 }
+declare class PersistedStateCard extends Card {
+    name: string;
+    displayName: string;
+    selectedTaskId: formattingSettings.TextInput;
+    floatThreshold: formattingSettings.NumUpDown;
+    slices: Slice[];
+}
 export declare class VisualSettings extends Model {
     taskAppearance: TaskAppearanceCard;
     connectorLines: ConnectorLinesCard;
@@ -99,6 +106,7 @@ export declare class VisualSettings extends Model {
     projectEndLine: ProjectEndLineCard;
     displayOptions: DisplayOptionsCard;
     taskSelection: TaskSelectionCard;
+    persistedState: PersistedStateCard;
     cards: Card[];
 }
 export {};

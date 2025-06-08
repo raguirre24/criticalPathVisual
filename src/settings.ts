@@ -226,10 +226,22 @@ class TaskSelectionCard extends Card {
 }
 
 class PersistedStateCard extends Card {
-    name: string = "persistedState"; displayName: string = "Persisted State";
+    name: string = "persistedState"; 
+    displayName: string = "Persisted State";
     visible: boolean = false;
-    selectedTaskId = new TextInput({ name: "selectedTaskId", displayName: "", value: "", visible: false });
-    floatThreshold = new NumUpDown({ name: "floatThreshold", displayName: "", value: 0, visible: false });
+    selectedTaskId = new TextInput({ 
+        name: "selectedTaskId", 
+        displayName: "", 
+        value: "", 
+        placeholder: "",
+        visible: false 
+    });
+    floatThreshold = new NumUpDown({ 
+        name: "floatThreshold", 
+        displayName: "", 
+        value: 0, 
+        visible: false 
+    });
     slices: Slice[] = [this.selectedTaskId, this.floatThreshold];
 }
 

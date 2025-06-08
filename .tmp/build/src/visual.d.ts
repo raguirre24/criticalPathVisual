@@ -65,6 +65,7 @@ export declare class Visual implements IVisual {
     private renderStartTime;
     private renderBatchTimer;
     private renderQueue;
+    private cpmWorker;
     private predecessorIndex;
     private taskDepthCache;
     private sortedTasksCache;
@@ -81,6 +82,7 @@ export declare class Visual implements IVisual {
     private createFloatThresholdControl;
     private toggleConnectorLinesDisplay;
     update(options: VisualUpdateOptions): void;
+    private updateInternal;
     private handleViewportOnlyUpdate;
     private handleSettingsOnlyUpdate;
     private clearVisual;
@@ -114,6 +116,8 @@ export declare class Visual implements IVisual {
      * @returns Object containing whether cycles exist and which tasks are involved
      */
     private detectAndReportCycles;
+    private ensureCpmWorker;
+    private calculateCPMOffThread;
     private calculateCPM;
     private calculateCPMToTask;
     private calculateCPMFromTask;
