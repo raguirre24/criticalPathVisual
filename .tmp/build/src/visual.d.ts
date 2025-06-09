@@ -34,6 +34,7 @@ export declare class Visual implements IVisual {
     private connectorToggleGroup;
     private showAllTasksInternal;
     private isInitialLoad;
+    private debug;
     private margin;
     private headerHeight;
     private dateLabelOffset;
@@ -179,4 +180,5 @@ export declare class Visual implements IVisual {
     private selectTask;
     private ensureTaskVisible;
     getFormattingModel(): powerbi.visuals.FormattingModel;
+    private debugLog;
 }

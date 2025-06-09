@@ -4681,7 +4681,7 @@ private transformDataOptimized(dataView: DataView): void {
       };
 
         const action = taskIds.length > 0 ? FilterAction.merge : FilterAction.remove;
-        this.host.applyJsonFilter(filter, "general", "taskFilter", action);
+        this.host.applyJsonFilter(filter, "general", "filter", action);
     }
 
     private displayMessage(message: string): void {
