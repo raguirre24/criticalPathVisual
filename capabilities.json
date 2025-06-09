@@ -208,11 +208,11 @@
             }
         }
     ],
-    "supportsHighlight": false,
+    "supportsHighlight": true,
     "sorting": { "default": {} },
     "supportsLandingPage": false,
     "supportsKeyboardFocus": false,
-    "supportsMultiVisualSelection": false,
+    "supportsMultiVisualSelection": true,
     "supportsEmptyDataView": false,
     "suppressDefaultTitle": false
 }
