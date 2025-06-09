@@ -17,6 +17,7 @@ import { VisualSettings } from "./settings";
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { IBasicFilter, FilterType } from "powerbi-models";
 import FilterAction = powerbi.FilterAction;
+import PriorityQueue from "./priorityQueue";
 
 // --- Update Task Interface to include tooltipData ---
 interface Task {
@@ -105,6 +106,9 @@ export class Visual implements IVisual {
     private showAllTasksInternal: boolean = true;
     private isInitialLoad: boolean = true;
 
+    // Debug flag to control verbose logging
+    private debug: boolean = false;
+
     // --- Configuration/Constants ---
     private margin = { top: 10, right: 100, bottom: 40, left: 280 };
     private headerHeight = 100;
@@ -160,7 +164,7 @@ export class Visual implements IVisual {
     private relationshipIndex: Map<string, Relationship[]> = new Map(); // Quick lookup for relationships by successorId
 
     constructor(options: VisualConstructorOptions) {
-            console.log("--- Initializing Critical Path Visual (Plot by Date) ---");
+            this.debugLog("--- Initializing Critical Path Visual (Plot by Date) ---");
             this.target = options.element;
             this.host = options.host;
             this.formattingSettingsService = new FormattingSettingsService();
@@ -593,14 +597,14 @@ export class Visual implements IVisual {
     public destroy(): void {
         this.tooltipDiv?.remove();
         this.applyTaskFilter([]);
-        console.log("Critical Path Visual destroyed.");
+        this.debugLog("Critical Path Visual destroyed.");
     }
 
     private toggleTaskDisplayInternal(): void {
         try {
-            console.log("Internal Toggle method called!");
+            this.debugLog("Internal Toggle method called!");
             this.showAllTasksInternal = !this.showAllTasksInternal;
-            console.log("New internal showAllTasksInternal value:", this.showAllTasksInternal);
+            this.debugLog("New internal showAllTasksInternal value:", this.showAllTasksInternal);
             this.host.persistProperties({ merge: [{ objectName: "displayOptions", properties: { showAllTasks: this.showAllTasksInternal }, selector: null }] });
     
             if (this.toggleButtonGroup) {
@@ -615,7 +619,7 @@ export class Visual implements IVisual {
                 return;
             }
             this.update(this.lastUpdateOptions);
-            console.log("Visual update triggered by internal toggle");
+            this.debugLog("Visual update triggered by internal toggle");
         } catch (error) {
             console.error("Error in internal toggle method:", error);
         }
@@ -966,9 +970,9 @@ export class Visual implements IVisual {
 
     private toggleConnectorLinesDisplay(): void {
         try {
-            console.log("Connector Lines Toggle method called!");
+            this.debugLog("Connector Lines Toggle method called!");
             this.showConnectorLinesInternal = !this.showConnectorLinesInternal;
-            console.log("New showConnectorLinesInternal value:", this.showConnectorLinesInternal);
+            this.debugLog("New showConnectorLinesInternal value:", this.showConnectorLinesInternal);
     
             // Only update the button text if the button is visible
             if (this.settings?.connectorLines?.showConnectorToggle?.value) {
@@ -981,7 +985,7 @@ export class Visual implements IVisual {
                 return;
             }
             this.update(this.lastUpdateOptions);
-            console.log("Visual update triggered by connector toggle");
+            this.debugLog("Visual update triggered by connector toggle");
         } catch (error) {
             console.error("Error in connector toggle method:", error);
         }
@@ -992,13 +996,13 @@ export class Visual implements IVisual {
     }
 
     private async updateInternal(options: VisualUpdateOptions) {
-        console.log("--- Visual Update Start ---");
+        this.debugLog("--- Visual Update Start ---");
         this.renderStartTime = performance.now();
 
         try {
             // Determine update type for optimization
             const updateType = this.determineUpdateType(options);
-            console.log(`Update type detected: ${updateType}`);
+            this.debugLog(`Update type detected: ${updateType}`);
             
             // Store current viewport for comparison
             this.lastViewport = options.viewport;
@@ -1028,7 +1032,7 @@ export class Visual implements IVisual {
             const viewportHeight = viewport.height;
             const viewportWidth = viewport.width;
     
-            console.log("Viewport:", viewportWidth, "x", viewportHeight);
+            this.debugLog("Viewport:", viewportWidth, "x", viewportHeight);
     
             this.settings = this.formattingSettingsService.populateFormattingSettingsModel(VisualSettings, dataView);
     
@@ -1063,7 +1067,7 @@ export class Visual implements IVisual {
                 this.displayMessage("Missing required fields: Task ID, Duration, Start Date, Finish Date."); 
                 return;
             }
-            console.log("Data roles validated.");
+            this.debugLog("Data roles validated.");
     
             // Transform data with performance optimization
             this.transformDataOptimized(dataView);
@@ -1071,7 +1075,7 @@ export class Visual implements IVisual {
                 this.displayMessage("No valid task data found to display."); 
                 return;
             }
-            console.log(`Transformed ${this.allTasksData.length} tasks.`);
+            this.debugLog(`Transformed ${this.allTasksData.length} tasks.`);
     
             // Restore selected task name after data is loaded
             if (this.selectedTaskId) {
@@ -1119,28 +1123,28 @@ export class Visual implements IVisual {
                 if (effectiveTraceMode === "forward") {
                     // Calculate critical path from selected task (forward)
                     this.calculateCPMFromTask(this.selectedTaskId);
-                    console.log(`Forward CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks from ${this.selectedTaskId}.`);
+                    this.debugLog(`Forward CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks from ${this.selectedTaskId}.`);
                     
                     // Identify all tasks that can be reached from the target task
                     tasksInPathFromTarget = this.identifyAllSuccessorTasksOptimized(this.selectedTaskId);
-                    console.log(`Identified ${tasksInPathFromTarget.size} total tasks that follow from target task ${this.selectedTaskId}`);
+                    this.debugLog(`Identified ${tasksInPathFromTarget.size} total tasks that follow from target task ${this.selectedTaskId}`);
                 } else {
                     // Calculate critical path to selected task (backward - original behavior)
                     this.calculateCPMToTask(this.selectedTaskId);
-                    console.log(`Backward CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks to ${this.selectedTaskId}.`);
+                    this.debugLog(`Backward CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks to ${this.selectedTaskId}.`);
                     
                     // Identify all tasks that can lead to the target task
                     tasksInPathToTarget = this.identifyAllPredecessorTasksOptimized(this.selectedTaskId);
-                    console.log(`Identified ${tasksInPathToTarget.size} total tasks that lead to target task ${this.selectedTaskId}`);
+                    this.debugLog(`Identified ${tasksInPathToTarget.size} total tasks that lead to target task ${this.selectedTaskId}`);
                 }
             } else {
                 // Calculate standard critical path with optimized method off-thread
                 await this.calculateCPMOffThread();
-                console.log(`CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks.`);
+                this.debugLog(`CPM calculation complete. Found ${this.allTasksData.filter(t => t.isCritical).length} critical tasks.`);
             }
     
             // --- Filtering/Limiting/Sorting logic ---
-            console.log(`Filtering tasks based on internal state: showAllTasksInternal = ${this.showAllTasksInternal}`);
+            this.debugLog(`Filtering tasks based on internal state: showAllTasksInternal = ${this.showAllTasksInternal}`);
             
             // Use cached sorted tasks if available
             const tasksSortedByES = this.sortedTasksCache || this.allTasksData
@@ -1193,7 +1197,7 @@ export class Visual implements IVisual {
                     : (criticalAndNearCriticalTasks.length > 0) ? criticalAndNearCriticalTasks : tasksSortedByES;
             }
             
-            console.log(`Tasks to consider for display (after filtering): ${tasksToConsider.length}`);
+            this.debugLog(`Tasks to consider for display (after filtering): ${tasksToConsider.length}`);
     
             // Update toggle button text
             if (this.toggleButtonGroup) {
@@ -1207,7 +1211,7 @@ export class Visual implements IVisual {
                 this.displayMessage("No tasks to display after filtering/limiting."); 
                 return;
             }
-            console.log(`Tasks after limiting to ${maxTasksToShowSetting}: ${limitedTasks.length}`);
+            this.debugLog(`Tasks after limiting to ${maxTasksToShowSetting}: ${limitedTasks.length}`);
     
             const tasksToPlot = limitedTasks.filter(task =>
                 task.startDate instanceof Date && !isNaN(task.startDate.getTime()) &&
@@ -1227,12 +1231,12 @@ export class Visual implements IVisual {
             if (tasksToPlot.length < limitedTasks.length) {
                 console.warn(`Filtered out ${limitedTasks.length - tasksToPlot.length} tasks due to missing/invalid Start/Finish dates.`);
             }
-            console.log(`Tasks ready for plotting (with valid dates): ${tasksToPlot.length}`);
+            this.debugLog(`Tasks ready for plotting (with valid dates): ${tasksToPlot.length}`);
     
             tasksToPlot.sort((a, b) => (a.startDate?.getTime() ?? 0) - (b.startDate?.getTime() ?? 0));
             tasksToPlot.forEach((task, index) => { task.yOrder = index; });
             const tasksToShow = tasksToPlot;
-            console.log("Assigned yOrder to tasks for plotting.");
+            this.debugLog("Assigned yOrder to tasks for plotting.");
             this.applyTaskFilter(tasksToShow.map(t => t.id));
     
             // --- Calculate dimensions and scales ---
@@ -1255,7 +1259,7 @@ export class Visual implements IVisual {
                 this.displayMessage("Could not create time/band scale. Check Start/Finish dates."); 
                 return;
             }
-            console.log(`Chart width: ${chartWidth}, Calculated chart height (used by yScale): ${calculatedChartHeight}`);
+            this.debugLog(`Chart width: ${chartWidth}, Calculated chart height (used by yScale): ${calculatedChartHeight}`);
     
             // --- Set SVG dimensions ---
             this.mainSvg.attr("width", viewportWidth);
@@ -1269,29 +1273,29 @@ export class Visual implements IVisual {
             // --- Scrolling logic ---
             const availableContentHeight = viewportHeight - this.headerHeight;
             if (totalSvgHeight > availableContentHeight && taskCount > 1) {
-                console.log("Enabling vertical scroll.");
+                this.debugLog("Enabling vertical scroll.");
                 this.scrollableContainer.style("height", `${availableContentHeight}px`)
                                       .style("overflow-y", "scroll");
             } else {
-                console.log("Disabling vertical scroll.");
+                this.debugLog("Disabling vertical scroll.");
                 this.scrollableContainer.style("height", `${Math.min(totalSvgHeight, availableContentHeight)}px`)
                                       .style("overflow-y", "hidden");
             }
     
             // Setup virtual scrolling with existing task height and padding variables
-            console.log("Setting up virtual scrolling...");
+            this.debugLog("Setting up virtual scrolling...");
             this.setupVirtualScroll(tasksToShow, taskHeight, taskPadding);
     
             // Get only visible tasks for first draw
             const visibleTasks = tasksToShow.slice(this.viewportStartIndex, this.viewportEndIndex + 1);
-            console.log(`Drawing ${visibleTasks.length} of ${tasksToShow.length} tasks initially visible`);
+            this.debugLog(`Drawing ${visibleTasks.length} of ${tasksToShow.length} tasks initially visible`);
     
-            console.log("Drawing visual elements...");
+            this.debugLog("Drawing visual elements...");
             this.drawVisualElements(visibleTasks, this.xScale, this.yScale, chartWidth, calculatedChartHeight);
             
             const renderEndTime = performance.now();
-            console.log(`Total render time: ${renderEndTime - this.renderStartTime}ms`);
-            console.log("Drawing complete.");
+            this.debugLog(`Total render time: ${renderEndTime - this.renderStartTime}ms`);
+            this.debugLog("Drawing complete.");
     
         } catch (error) {
             console.error("--- ERROR during visual update ---", error);
@@ -1299,11 +1303,11 @@ export class Visual implements IVisual {
             this.displayMessage(`Error: ${errorMessage}`);
             this.isInitialLoad = true;
         }
-        console.log("--- Visual Update End ---");
+        this.debugLog("--- Visual Update End ---");
     }
 
     private handleViewportOnlyUpdate(options: VisualUpdateOptions): void {
-        console.log("Performing viewport-only update");
+        this.debugLog("Performing viewport-only update");
         const viewportWidth = options.viewport.width;
         const viewportHeight = options.viewport.height;
         
@@ -1333,11 +1337,11 @@ export class Visual implements IVisual {
         this.calculateVisibleTasks();
         this.redrawVisibleTasks();
         
-        console.log("--- Visual Update End (Viewport Only) ---");
+        this.debugLog("--- Visual Update End (Viewport Only) ---");
     }
 
     private handleSettingsOnlyUpdate(options: VisualUpdateOptions): void {
-        console.log("Performing settings-only update");
+        this.debugLog("Performing settings-only update");
         
         // Update settings
         this.settings = this.formattingSettingsService.populateFormattingSettingsModel(
@@ -1363,7 +1367,7 @@ export class Visual implements IVisual {
             );
         }
         
-        console.log("--- Visual Update End (Settings Only) ---");
+        this.debugLog("--- Visual Update End (Settings Only) ---");
     }
 
     private clearVisual(): void {
@@ -1539,7 +1543,7 @@ export class Visual implements IVisual {
         // Ensure we don't exceed total count
         this.viewportEndIndex = Math.min(this.taskTotalCount - 1, this.viewportStartIndex + this.visibleTaskCount);
         
-        console.log(`Viewport: ${this.viewportStartIndex} - ${this.viewportEndIndex} of ${this.taskTotalCount}`);
+        this.debugLog(`Viewport: ${this.viewportStartIndex} - ${this.viewportEndIndex} of ${this.taskTotalCount}`);
     }
     
     private handleScroll(): void {
@@ -1708,7 +1712,7 @@ export class Visual implements IVisual {
         const yDomain = tasksToShow.map((d: Task) => d.yOrder?.toString() ?? '').filter(id => id !== '');
 
         if (yDomain.length === 0) {
-             console.log("Y-scale domain is empty because no tasks are being plotted.");
+             this.debugLog("Y-scale domain is empty because no tasks are being plotted.");
              // Still return xScale if valid
              return { xScale: (isNaN(xScale.range()[0]) ? null : xScale), yScale: null, chartWidth, calculatedChartHeight };
         }
@@ -1720,7 +1724,7 @@ export class Visual implements IVisual {
             .paddingInner(taskPadding / (taskHeight + taskPadding))
             .paddingOuter(taskPadding / (taskHeight + taskPadding) / 2);
 
-        console.log(`Created Scales - X-Domain: ${domainMin.toISOString()} to ${domainMax.toISOString()}, Y-Domain Keys: ${yDomain.length}`);
+        this.debugLog(`Created Scales - X-Domain: ${domainMin.toISOString()} to ${domainMax.toISOString()}, Y-Domain Keys: ${yDomain.length}`);
         return { xScale, yScale, chartWidth, calculatedChartHeight };
     }
 
@@ -1733,7 +1737,7 @@ export class Visual implements IVisual {
         ): void {
             // Skip if there's an active scroll operation
             if (this.scrollThrottleTimeout !== null) {
-                console.log("Skipping full redraw during active scroll");
+                this.debugLog("Skipping full redraw during active scroll");
                 return;
             }
         
@@ -1767,7 +1771,7 @@ export class Visual implements IVisual {
         
             // NEW: Decide whether to use Canvas or SVG based on task count
             this.useCanvasRendering = tasksToShow.length > this.CANVAS_THRESHOLD;
-            console.log(`Rendering mode: ${this.useCanvasRendering ? 'Canvas' : 'SVG'} for ${tasksToShow.length} tasks`);
+            this.debugLog(`Rendering mode: ${this.useCanvasRendering ? 'Canvas' : 'SVG'} for ${tasksToShow.length} tasks`);
         
             if (showHorzGridLines) {
                 const currentLeftMargin = this.settings.layoutSettings.leftMargin.value;
@@ -3138,11 +3142,11 @@ private calculateCPMOffThread(): Promise<void> {
 }
 
 private calculateCPM(): void {
-    console.log("Starting optimized CPM calculation...");
+    this.debugLog("Starting optimized CPM calculation...");
     const startTime = performance.now();
     
     if (this.allTasksData.length === 0) { 
-        console.log("No tasks for CPM."); 
+        this.debugLog("No tasks for CPM."); 
         return; 
     }
     
@@ -3174,13 +3178,13 @@ private calculateCPM(): void {
     
     // Calculate project end date
     const projectEndDate = this.calculateCriticalPathDuration(tasksToProcess);
-    console.log(`Project End Date (CPM Day): ${projectEndDate}`);
+    this.debugLog(`Project End Date (CPM Day): ${projectEndDate}`);
     
     // Perform backward pass with optimization
     this.performOptimizedBackwardPass(tasksToProcess, projectEndDate);
     
     // --- Calculate Float and Criticality with batch processing ---
-    console.log("Calculating floats and criticality...");
+    this.debugLog("Calculating floats and criticality...");
     
     // Pre-calculate floats for all tasks in a single pass
     const taskFloatMap = new Map<string, number>();
@@ -3275,16 +3279,16 @@ private calculateCPM(): void {
     });
     
     const endTime = performance.now();
-    console.log(`CPM calculation completed in ${endTime - startTime}ms for ${tasksToProcess.length} tasks.`);
-    console.log(`Found ${tasksToProcess.filter(t => t.isCritical).length} critical tasks and ${tasksToProcess.filter(t => t.isNearCritical).length} near-critical tasks.`);
+    this.debugLog(`CPM calculation completed in ${endTime - startTime}ms for ${tasksToProcess.length} tasks.`);
+    this.debugLog(`Found ${tasksToProcess.filter(t => t.isCritical).length} critical tasks and ${tasksToProcess.filter(t => t.isNearCritical).length} near-critical tasks.`);
 }
 
 private calculateCPMToTask(targetTaskId: string | null): void {
-    console.log(`Calculating optimized CPM to task: ${targetTaskId || "None (full project)"}`);
+    this.debugLog(`Calculating optimized CPM to task: ${targetTaskId || "None (full project)"}`);
     const startTime = performance.now();
     
     if (this.allTasksData.length === 0) { 
-        console.log("No tasks for CPM."); 
+        this.debugLog("No tasks for CPM."); 
         return; 
     }
 
@@ -3332,7 +3336,7 @@ private calculateCPMToTask(targetTaskId: string | null): void {
 
     // --- Use cached predecessor information for efficiency ---
     const tasksInPathToTarget = this.identifyAllPredecessorTasksOptimized(targetTaskId);
-    console.log(`Identified ${tasksInPathToTarget.size} tasks in path to target`);
+    this.debugLog(`Identified ${tasksInPathToTarget.size} tasks in path to target`);
 
     // --- Forward Pass (optimized for subset) ---
     const sortedTasks = this.performOptimizedForwardPass(
@@ -3401,15 +3405,15 @@ private calculateCPMToTask(targetTaskId: string | null): void {
     this.calculateFloatAndCriticalityForSubset(tasksInPathToTarget, targetTaskId);
     
     const endTime = performance.now();
-    console.log(`CPM to task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
+    this.debugLog(`CPM to task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
 }
 
 private calculateCPMFromTask(targetTaskId: string | null): void {
-    console.log(`Calculating optimized forward CPM from task: ${targetTaskId || "None (full project)"}`);
+    this.debugLog(`Calculating optimized forward CPM from task: ${targetTaskId || "None (full project)"}`);
     const startTime = performance.now();
     
     if (this.allTasksData.length === 0) { 
-        console.log("No tasks for CPM."); 
+        this.debugLog("No tasks for CPM."); 
         return; 
     }
 
@@ -3457,7 +3461,7 @@ private calculateCPMFromTask(targetTaskId: string | null): void {
 
     // --- Use cached successor information for efficiency ---
     const tasksInPathFromTarget = this.identifyAllSuccessorTasksOptimized(targetTaskId);
-    console.log(`Identified ${tasksInPathFromTarget.size} tasks that follow from target task`);
+    this.debugLog(`Identified ${tasksInPathFromTarget.size} tasks that follow from target task`);
 
     // Set the selected task as the starting point
     sourceTask.earlyStart = 0;
@@ -3625,11 +3629,11 @@ private calculateCPMFromTask(targetTaskId: string | null): void {
     this.calculateFloatAndCriticalityForSubset(tasksInPathFromTarget, targetTaskId);
     
     const endTime = performance.now();
-    console.log(`CPM forward from task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
+    this.debugLog(`CPM forward from task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
 }
 
 private topologicalSortOptimized(tasks: Task[]): Task[] {
-    console.log("Starting optimized topological sort...");
+    this.debugLog("Starting optimized topological sort...");
     const startTime = performance.now();
     
     const result: Task[] = [];
@@ -3701,21 +3705,20 @@ private topologicalSortOptimized(tasks: Task[]): Task[] {
     });
     
     const endTime = performance.now();
-    console.log(`Topological sort completed in ${endTime - startTime}ms for ${tasks.length} tasks with ${result.length} sorted tasks.`);
+    this.debugLog(`Topological sort completed in ${endTime - startTime}ms for ${tasks.length} tasks with ${result.length} sorted tasks.`);
     
     return result;
 }
 
 private performOptimizedForwardPass(tasks: Task[]): Task[] {
-    console.log("Starting optimized forward pass...");
+    this.debugLog("Starting optimized forward pass...");
     const startTime = performance.now();
     
     // Create an efficient data structure for task lookup
     const taskMap = this.taskIdToTask;
     
     // Use a priority queue for task processing
-    // (Simulated here with sorted arrays for simplicity)
-    const processingQueue: Task[] = [];
+    const processingQueue = new PriorityQueue<Task>();
     const inDegree = new Map<string, number>();
     
     // Initialize in-degree for all tasks
@@ -3733,7 +3736,7 @@ private performOptimizedForwardPass(tasks: Task[]): Task[] {
         
         // Add tasks with no predecessors to the queue
         if (degree === 0) {
-            processingQueue.push(task);
+            processingQueue.enqueue(task, task.earlyStart ?? 0);
         }
     });
     
@@ -3741,15 +3744,16 @@ private performOptimizedForwardPass(tasks: Task[]): Task[] {
     const processedTasks = new Map<string, boolean>();
     const sortedTasks: Task[] = [];
     
-    while (processingQueue.length > 0) {
-        // Get next task (could be optimized with a proper priority queue)
-        const currentTask = processingQueue.shift()!;
+    while (processingQueue.size() > 0) {
+        const currentTask = processingQueue.dequeue()!;
         sortedTasks.push(currentTask);
         processedTasks.set(currentTask.internalId, true);
         
         // Pre-compute and cache successors
-        currentTask.successors = tasks.filter(t => 
-            t.predecessorIds.includes(currentTask.internalId));
+        const succIds = this.predecessorIndex.get(currentTask.internalId) || new Set<string>();
+        currentTask.successors = Array.from(succIds)
+            .map(id => this.taskIdToTask.get(id))
+            .filter((t): t is Task => t !== undefined);
         
         for (const successor of currentTask.successors) {
             const successorId = successor.internalId;
@@ -3775,7 +3779,7 @@ private performOptimizedForwardPass(tasks: Task[]): Task[] {
                 const newInDegree = currentInDegree - 1;
                 inDegree.set(successorId, newInDegree);
                 if (newInDegree === 0) {
-                    processingQueue.push(successor);
+                    processingQueue.enqueue(successor, successor.earlyStart ?? 0);
                 }
             }
         }
@@ -3788,7 +3792,7 @@ private performOptimizedForwardPass(tasks: Task[]): Task[] {
     }
     
     const endTime = performance.now();
-    console.log(`Forward pass completed in ${endTime - startTime}ms for ${tasks.length} tasks.`);
+    this.debugLog(`Forward pass completed in ${endTime - startTime}ms for ${tasks.length} tasks.`);
     
     return sortedTasks;
 }
@@ -3840,19 +3844,21 @@ private handleCyclesInForwardPass(tasks: Task[], processedTasks: Map<string, boo
         }
     }
     
-    console.log(`Cycle resolution completed in ${iteration} iterations.`);
+    this.debugLog(`Cycle resolution completed in ${iteration} iterations.`);
 }
 
 private performOptimizedBackwardPass(tasks: Task[], projectEndDate: number): void {
-    console.log("Starting optimized backward pass...");
+    this.debugLog("Starting optimized backward pass...");
     const startTime = performance.now();
     
-    // Prepare successors cache for all tasks
+    // Prepare successors cache for all tasks using predecessorIndex
     const successorCache = new Map<string, Task[]>();
-    
+
     tasks.forEach((task: Task) => {
-        // Compute and cache successors
-        const successors = tasks.filter(t => t.predecessorIds.includes(task.internalId));
+        const successorIds = this.predecessorIndex.get(task.internalId) || new Set<string>();
+        const successors = Array.from(successorIds)
+            .map(id => this.taskIdToTask.get(id))
+            .filter((t): t is Task => t !== undefined);
         successorCache.set(task.internalId, successors);
         task.successors = successors;
         
@@ -3910,7 +3916,7 @@ private performOptimizedBackwardPass(tasks: Task[], projectEndDate: number): voi
     }
     
     const endTime = performance.now();
-    console.log(`Backward pass completed in ${endTime - startTime}ms for ${tasks.length} tasks.`);
+    this.debugLog(`Backward pass completed in ${endTime - startTime}ms for ${tasks.length} tasks.`);
 }
 
 private identifyAllPredecessorTasksOptimized(targetTaskId: string): Set<string> {
@@ -4227,7 +4233,7 @@ private extractTooltipData(row: any[], dataView: DataView): Map<string, Primitiv
 }
 
 private transformDataOptimized(dataView: DataView): void {
-    console.log("Transforming data with enhanced optimization...");
+    this.debugLog("Transforming data with enhanced optimization...");
     const startTime = performance.now();
     
     // Clear existing data
@@ -4422,7 +4428,7 @@ private transformDataOptimized(dataView: DataView): void {
     });
 
     const endTime = performance.now();
-    console.log(`Data transformation complete in ${endTime - startTime}ms. ` +
+    this.debugLog(`Data transformation complete in ${endTime - startTime}ms. ` +
                 `Found ${this.allTasksData.length} tasks and ${this.relationships.length} relationships.`);
 }
     
@@ -4560,7 +4566,7 @@ private transformDataOptimized(dataView: DataView): void {
             return [...tasksToFilter];
         }
     
-        console.log(`Limiting tasks shown from ${tasksToFilter.length} to ${effectiveMaxTasks}`);
+        this.debugLog(`Limiting tasks shown from ${tasksToFilter.length} to ${effectiveMaxTasks}`);
         const tasksToShow: Task[] = [];
         const shownTaskIds = new Set<string>();
     
@@ -4655,7 +4661,7 @@ private transformDataOptimized(dataView: DataView): void {
         // Re-sort the final limited set based on original yOrder
         tasksToShow.sort((a, b) => (a.yOrder ?? Infinity) - (b.yOrder ?? Infinity));
     
-        console.log(`Final limited task count: ${tasksToShow.length}`);
+        this.debugLog(`Final limited task count: ${tasksToShow.length}`);
         return tasksToShow;
     }
 
@@ -4679,7 +4685,7 @@ private transformDataOptimized(dataView: DataView): void {
     }
 
     private displayMessage(message: string): void {
-        console.log("Displaying Message:", message);
+        this.debugLog("Displaying Message:", message);
         const containerNode = this.scrollableContainer?.node();
         if (!containerNode || !this.mainSvg || !this.headerSvg) {
             console.error("Cannot display message, containers or svgs not ready.");
@@ -4771,7 +4777,7 @@ private createTaskSelectionDropdown(): void {
 
         // Calculate height from list top to bottom of the header
         availableHeight = Math.max(0, this.headerHeight - listTopOffset - bottomPadding);
-         console.log(`Calculated Dropdown Max Height: Header=${this.headerHeight}, ContainerTop=${containerTopPx}, InputHeight=${inputHeight}, Available=${availableHeight}`);
+         this.debugLog(`Calculated Dropdown Max Height: Header=${this.headerHeight}, ContainerTop=${containerTopPx}, InputHeight=${inputHeight}, Available=${availableHeight}`);
     } else {
          console.warn("Could not get dropdown input height for calculation.");
     }
@@ -5112,8 +5118,8 @@ private ensureTaskVisible(taskId: string): void {
     }
 }
 
-public getFormattingModel(): powerbi.visuals.FormattingModel {
-        console.log("getFormattingModel called");
+    public getFormattingModel(): powerbi.visuals.FormattingModel {
+        this.debugLog("getFormattingModel called");
         if (!this.formattingSettingsService) {
              console.error("FormattingSettingsService not initialized before getFormattingModel call.");
              return { cards: [] };
@@ -5126,6 +5132,13 @@ public getFormattingModel(): powerbi.visuals.FormattingModel {
              this.settings = new VisualSettings();
         }
         return this.formattingSettingsService.buildFormattingModel(this.settings);
-}
+    }
+
+    // Debug helper
+    private debugLog(...args: unknown[]): void {
+        if (this.debug) {
+            console.log(...args);
+        }
+    }
 
 } // End of Visual class
