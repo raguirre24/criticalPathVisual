@@ -4665,6 +4665,7 @@ private transformDataOptimized(dataView: DataView): void {
         const filter: IBasicFilter = {
             // eslint-disable-next-line powerbi-visuals/no-http-string
             $schema: "http://powerbi.com/product/schema#basic",
+            filterType: 1, // 1 corresponds to FilterType.Basic
             target: {
                 table: this.taskIdTable,
                 column: this.taskIdColumn

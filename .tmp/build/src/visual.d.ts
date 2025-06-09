@@ -26,6 +26,9 @@ export declare class Visual implements IVisual {
     private allTasksData;
     private relationships;
     private taskIdToTask;
+    private taskIdQueryName;
+    private taskIdTable;
+    private taskIdColumn;
     private lastUpdateOptions;
     private showConnectorLinesInternal;
     private connectorToggleGroup;
@@ -152,6 +155,7 @@ export declare class Visual implements IVisual {
     private parseDate;
     private formatDate;
     private limitTasks;
+    private applyTaskFilter;
     private displayMessage;
     /**
      * Creates or updates the task selection dropdown based on current settings

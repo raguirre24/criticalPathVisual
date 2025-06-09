@@ -92,8 +92,10 @@ declare class TaskSelectionCard extends Card {
 declare class PersistedStateCard extends Card {
     name: string;
     displayName: string;
+    visible: boolean;
     selectedTaskId: formattingSettings.TextInput;
     floatThreshold: formattingSettings.NumUpDown;
+    traceMode: formattingSettings.TextInput;
     slices: Slice[];
 }
 export declare class VisualSettings extends Model {
