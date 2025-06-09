@@ -15,6 +15,7 @@
     },
     "files": [
         "./src/visual.ts",
-        "./src/cpmWorker.ts"
+        "./src/cpmWorker.ts",
+        "./src/priorityQueue.ts"
     ]
 }
