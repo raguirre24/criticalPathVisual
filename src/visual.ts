@@ -4662,17 +4662,17 @@ private transformDataOptimized(dataView: DataView): void {
     private applyTaskFilter(taskIds: (string | number)[]): void {
         if (!this.taskIdTable || !this.taskIdColumn) return;
 
-        const filter: IBasicFilter = {
-            // eslint-disable-next-line powerbi-visuals/no-http-string
-            $schema: "http://powerbi.com/product/schema#basic",
-            target: {
-                table: this.taskIdTable,
-                column: this.taskIdColumn
-            },
-            filterType: FilterType.Basic,
-            operator: "In",
-            values: taskIds
-        };
+      const filter: IBasicFilter = {
+          // eslint-disable-next-line powerbi-visuals/no-http-string
+          $schema: "http://powerbi.com/product/schema#basic",
+          target: {
+              table: this.taskIdTable,
+              column: this.taskIdColumn
+          },
+          filterType: FilterType.Basic,
+          operator: "In",
+          values: taskIds
+      };
 
         const action = taskIds.length > 0 ? FilterAction.merge : FilterAction.remove;
         this.host.applyJsonFilter(filter, "general", "taskFilter", action);
