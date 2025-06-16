@@ -11,7 +11,7 @@
             "name": "duration",
             "kind": "Measure",
             "displayName": "Duration (Work Days)",
-            "description": "Task duration in work days for CPM calc"
+            "description": "Task duration in work days for CPM calc (optional)"
         },
         {
             "name": "startDate",
