@@ -1,6 +1,7 @@
 interface WorkerTask {
     internalId: string;
-    duration: number;
+    start: number;
+    finish: number;
     predecessorIds: string[];
     relationshipTypes: { [predId: string]: string };
     relationshipLags: { [predId: string]: number | null };
@@ -29,6 +30,7 @@ interface WorkerTaskResult {
     lateStart: number;
     lateFinish: number;
     totalFloat: number;
+    violatesConstraints: boolean;
     isCritical: boolean;
     isCriticalByFloat: boolean;
     isCriticalByRel: boolean;
@@ -45,15 +47,19 @@ self.onmessage = (event: MessageEvent<WorkerInput>) => {
     const data = event.data;
     const tasks = data.tasks.map(t => ({
         ...t,
-        earlyStart: 0,
-        earlyFinish: t.duration,
-        lateStart: Infinity,
-        lateFinish: Infinity,
-        totalFloat: Infinity,
+        duration: t.finish - t.start,
+        earlyStart: t.start,
+        earlyFinish: t.finish,
+        lateStart: t.start,
+        lateFinish: t.finish,
+        totalFloat: 0,
+        violatesConstraints: false,
         isCritical: false,
         isCriticalByFloat: false,
         isCriticalByRel: false,
         isNearCritical: false,
+        earliestReqStart: t.start,
+        latestReqFinish: t.finish,
     }));
 
     const taskMap = new Map<string, typeof tasks[0]>();
@@ -68,10 +74,10 @@ self.onmessage = (event: MessageEvent<WorkerInput>) => {
         predecessors.get(rel.successorId)!.push(rel.predecessorId);
     });
 
-    const inDegree = new Map<string, number>();
-    tasks.forEach(t => inDegree.set(t.internalId, (predecessors.get(t.internalId) || []).length));
+    const inDeg = new Map<string, number>();
+    tasks.forEach(t => inDeg.set(t.internalId, (predecessors.get(t.internalId) || []).length));
     const queue: string[] = [];
-    inDegree.forEach((d, id) => { if (d === 0) queue.push(id); });
+    inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
 
     const topo: string[] = [];
     while (queue.length) {
@@ -80,76 +86,58 @@ self.onmessage = (event: MessageEvent<WorkerInput>) => {
         const succs = successors.get(id) || [];
         for (const succId of succs) {
             const succ = taskMap.get(succId)!;
+            const pred = taskMap.get(id)!;
             const relType = succ.relationshipTypes[id] || 'FS';
             const lag = succ.relationshipLags[id] ?? 0;
-            const curr = taskMap.get(id)!;
-            let start = 0;
+            let req = succ.earliestReqStart;
             switch (relType) {
-                case 'FS': start = curr.earlyFinish + lag; break;
-                case 'SS': start = curr.earlyStart + lag; break;
-                case 'FF': start = curr.earlyFinish - succ.duration + lag; break;
-                case 'SF': start = curr.earlyStart - succ.duration + lag; break;
-                default: start = curr.earlyFinish + lag; break;
+                case 'FS': req = Math.max(req, pred.earlyFinish + lag); break;
+                case 'SS': req = Math.max(req, pred.earlyStart + lag); break;
+                case 'FF': req = Math.max(req, pred.earlyFinish - succ.duration + lag); break;
+                case 'SF': req = Math.max(req, pred.earlyStart - succ.duration + lag); break;
+                default: req = Math.max(req, pred.earlyFinish + lag); break;
             }
-            succ.earlyStart = Math.max(succ.earlyStart, Math.max(0, start));
-            succ.earlyFinish = succ.earlyStart + succ.duration;
-            const nd = (inDegree.get(succId) || 0) - 1;
-            inDegree.set(succId, nd);
+            succ.earliestReqStart = req;
+            const nd = inDeg.get(succId)! - 1;
+            inDeg.set(succId, nd);
             if (nd === 0) queue.push(succId);
         }
     }
-
-    const projectEnd = tasks.reduce((m, t) => Math.max(m, isFinite(t.earlyFinish) ? t.earlyFinish : m), 0);
-
-    tasks.forEach(t => {
-        if ((successors.get(t.internalId) || []).length === 0) {
-            t.lateFinish = projectEnd;
-            t.lateStart = Math.max(0, projectEnd - t.duration);
-        }
-    });
 
     for (let i = topo.length - 1; i >= 0; i--) {
         const id = topo[i];
         const task = taskMap.get(id)!;
         const succs = successors.get(id) || [];
         if (succs.length === 0) continue;
-        let minReq = Infinity;
+        let minFinish = Infinity;
         for (const succId of succs) {
             const succ = taskMap.get(succId)!;
-            if (!isFinite(succ.lateStart) || !isFinite(succ.lateFinish)) continue;
             const relType = succ.relationshipTypes[id] || 'FS';
             const lag = succ.relationshipLags[id] ?? 0;
-            let req = Infinity;
+            let reqFinish = Infinity;
             switch (relType) {
-                case 'FS': req = succ.lateStart - lag; break;
-                case 'SS': req = succ.lateStart - lag + task.duration; break;
-                case 'FF': req = succ.lateFinish - lag; break;
-                case 'SF': req = succ.lateFinish - lag - succ.duration + task.duration; break;
-                default: req = succ.lateStart - lag; break;
+                case 'FS': reqFinish = succ.earlyStart - lag; break;
+                case 'SS': reqFinish = succ.earlyStart - lag + task.duration; break;
+                case 'FF': reqFinish = succ.earlyFinish - lag; break;
+                case 'SF': reqFinish = succ.earlyFinish - lag - succ.duration + task.duration; break;
+                default: reqFinish = succ.earlyStart - lag; break;
             }
-            if (req < minReq) minReq = req;
+            if (reqFinish < minFinish) minFinish = reqFinish;
         }
-        if (minReq !== Infinity) {
-            task.lateFinish = minReq;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
-        } else if (isFinite(task.earlyFinish)) {
-            task.lateFinish = projectEnd;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
+        if (minFinish !== Infinity) {
+            task.latestReqFinish = Math.min(task.earlyFinish, minFinish);
         }
     }
 
     tasks.forEach(t => {
-        if (isFinite(t.lateStart) && isFinite(t.earlyStart)) {
-            t.totalFloat = Math.max(0, t.lateStart - t.earlyStart);
-            t.isCriticalByFloat = t.totalFloat <= data.floatTolerance;
-            t.isNearCritical = !t.isCriticalByFloat &&
-                t.totalFloat > data.floatTolerance &&
-                t.totalFloat <= data.floatThreshold;
-        } else {
-            t.totalFloat = Infinity;
-            t.isCriticalByFloat = false;
-            t.isNearCritical = false;
-        }
+        const startSlack = t.earlyStart - (t.earliestReqStart as number);
+        const finishSlack = (t.latestReqFinish as number) - t.earlyFinish;
+        t.totalFloat = Math.min(startSlack, finishSlack);
+        t.lateFinish = t.earlyFinish + Math.max(0, t.totalFloat);
+        t.lateStart = t.lateFinish - t.duration;
+        t.violatesConstraints = t.totalFloat < -data.floatTolerance;
+        t.isCriticalByFloat = Math.abs(t.totalFloat) <= data.floatTolerance && !t.violatesConstraints;
+        t.isNearCritical = !t.isCriticalByFloat && !t.violatesConstraints && t.totalFloat > data.floatTolerance && t.totalFloat <= data.floatThreshold;
         t.isCriticalByRel = false;
     });
 
@@ -192,6 +180,7 @@ self.onmessage = (event: MessageEvent<WorkerInput>) => {
         lateStart: t.lateStart,
         lateFinish: t.lateFinish,
         totalFloat: t.totalFloat,
+        violatesConstraints: t.violatesConstraints,
         isCritical: t.isCritical,
         isCriticalByFloat: t.isCriticalByFloat,
         isCriticalByRel: t.isCriticalByRel,
