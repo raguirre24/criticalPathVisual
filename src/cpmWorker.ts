@@ -1,4 +1,4 @@
-interface WorkerTask {
+export interface WorkerTask {
     internalId: string;
     start: number;
     finish: number;
@@ -7,7 +7,7 @@ interface WorkerTask {
     relationshipLags: { [predId: string]: number | null };
 }
 
-interface WorkerRelationship {
+export interface WorkerRelationship {
     predecessorId: string;
     successorId: string;
     type: string;
@@ -16,14 +16,14 @@ interface WorkerRelationship {
     isCritical?: boolean;
 }
 
-interface WorkerInput {
+export interface WorkerInput {
     tasks: WorkerTask[];
     relationships: WorkerRelationship[];
     floatTolerance: number;
     floatThreshold: number;
 }
 
-interface WorkerTaskResult {
+export interface WorkerTaskResult {
     internalId: string;
     earlyStart: number;
     earlyFinish: number;
@@ -37,14 +37,13 @@ interface WorkerTaskResult {
     isNearCritical: boolean;
 }
 
-interface WorkerRelationshipResult {
+export interface WorkerRelationshipResult {
     predecessorId: string;
     successorId: string;
     isCritical: boolean;
 }
 
-self.onmessage = (event: MessageEvent<WorkerInput>) => {
-    const data = event.data;
+export function analyzeSchedule(data: WorkerInput): { tasks: WorkerTaskResult[]; relationships: WorkerRelationshipResult[] } {
     const tasks = data.tasks.map(t => ({
         ...t,
         duration: t.finish - t.start,
@@ -192,6 +191,10 @@ self.onmessage = (event: MessageEvent<WorkerInput>) => {
         successorId: r.successorId,
         isCritical: !!r.isCritical,
     }));
+    return { tasks: tasksResult, relationships: relResult };
+}
 
-    (self as any).postMessage({ tasks: tasksResult, relationships: relResult });
+self.onmessage = (event: MessageEvent<WorkerInput>) => {
+    const result = analyzeSchedule(event.data);
+    (self as any).postMessage(result);
 };
