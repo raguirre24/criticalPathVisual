@@ -121,6 +121,7 @@ export declare class Visual implements IVisual {
      */
     private detectAndReportCycles;
     private ensureCpmWorker;
+    private runScheduleAnalysis;
     private calculateCPMOffThread;
     private calculateCPM;
     private calculateCPMToTask;

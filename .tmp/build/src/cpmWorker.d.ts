@@ -1,6 +1,7 @@
 interface WorkerTask {
     internalId: string;
-    duration: number;
+    start: number;
+    finish: number;
     predecessorIds: string[];
     relationshipTypes: {
         [predId: string]: string;
@@ -30,6 +31,7 @@ interface WorkerTaskResult {
     lateStart: number;
     lateFinish: number;
     totalFloat: number;
+    violatesConstraints: boolean;
     isCritical: boolean;
     isCriticalByFloat: boolean;
     isCriticalByRel: boolean;
