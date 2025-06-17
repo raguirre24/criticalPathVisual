@@ -174,7 +174,8 @@
             "displayName": "Display Options",
             "properties": {
                 "showTooltips": { "displayName": "Show Tooltips", "type": { "bool": true } },
-                "showAllTasks": { "type": { "bool": true } }
+                "showAllTasks": { "type": { "bool": true } },
+                "unconstrainedMode": { "displayName": "Unconstrained CPM", "type": { "bool": true } }
             }
         },
         "persistedState": {
