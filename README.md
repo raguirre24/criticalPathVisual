@@ -44,3 +44,6 @@ Relationships between tasks can include predecessor IDs, relationship types (FS/
 
 ## Schedule-Based Analysis
 Unlike traditional CPM calculations that determine when tasks should occur, this visual analyzes a provided schedule. Start and finish dates are not adjusted; instead, the algorithm calculates earliest and latest required times to determine float and highlight violations. Trace forward/backward functions and the web worker use this same analysis.
+
+## Unconstrained Mode
+Enable **Unconstrained CPM** in the formatting pane to ignore provided start and finish dates. The visual performs a traditional network analysis based solely on task durations and dependencies. Early/late dates are computed from a forward/backward pass and total float becomes `lateStart - earlyStart`. Tasks that are scheduled with gaps will therefore show positive float in this mode.
