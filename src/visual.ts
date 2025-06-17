@@ -3216,6 +3216,130 @@ private runScheduleAnalysis(tasks: Task[], relationships: Relationship[], floatT
     });
 }
 
+private runUnconstrainedAnalysis(tasks: Task[], relationships: Relationship[], floatTol: number, floatThreshold: number): void {
+    if (tasks.length === 0) return;
+
+    const taskMap = new Map<string, Task>();
+    tasks.forEach(t => {
+        taskMap.set(t.internalId, t);
+        // reset
+        t.earlyStart = 0;
+        t.earlyFinish = t.duration;
+        t.lateStart = 0;
+        t.lateFinish = 0;
+        t.totalFloat = 0;
+        t.isCritical = false;
+        t.isCriticalByFloat = false;
+        t.isCriticalByRel = false;
+        t.isNearCritical = false;
+    });
+
+    const successors = new Map<string, string[]>();
+    const predecessors = new Map<string, string[]>();
+    relationships.forEach(r => {
+        if (!successors.has(r.predecessorId)) successors.set(r.predecessorId, []);
+        successors.get(r.predecessorId)!.push(r.successorId);
+        if (!predecessors.has(r.successorId)) predecessors.set(r.successorId, []);
+        predecessors.get(r.successorId)!.push(r.predecessorId);
+    });
+
+    const inDeg = new Map<string, number>();
+    tasks.forEach(t => inDeg.set(t.internalId, (predecessors.get(t.internalId) || []).length));
+    const queue: string[] = [];
+    inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
+    const topo: string[] = [];
+    while (queue.length) {
+        const id = queue.shift()!;
+        topo.push(id);
+        const succs = successors.get(id) || [];
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const pred = taskMap.get(id)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqStart = 0;
+            switch (relType) {
+                case 'FS': reqStart = pred.earlyFinish + lag; break;
+                case 'SS': reqStart = pred.earlyStart + lag; break;
+                case 'FF': reqStart = pred.earlyFinish - succ.duration + lag; break;
+                case 'SF': reqStart = pred.earlyStart - succ.duration + lag; break;
+                default: reqStart = pred.earlyFinish + lag; break;
+            }
+            succ.earlyStart = Math.max(succ.earlyStart, reqStart);
+            succ.earlyFinish = succ.earlyStart + succ.duration;
+            const nd = inDeg.get(succId)! - 1;
+            inDeg.set(succId, nd);
+            if (nd === 0) queue.push(succId);
+        }
+    }
+
+    const projectEnd = Math.max(...tasks.map(t => t.earlyFinish));
+
+    for (let i = topo.length - 1; i >= 0; i--) {
+        const id = topo[i];
+        const task = taskMap.get(id)!;
+        const succs = successors.get(id) || [];
+        let minFinish = Infinity;
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqFinish = Infinity;
+            switch (relType) {
+                case 'FS': reqFinish = succ.lateStart - lag; break;
+                case 'SS': reqFinish = succ.lateStart - lag + task.duration; break;
+                case 'FF': reqFinish = succ.lateFinish - lag; break;
+                case 'SF': reqFinish = succ.lateFinish - lag - succ.duration + task.duration; break;
+                default: reqFinish = succ.lateStart - lag; break;
+            }
+            if (reqFinish < minFinish) minFinish = reqFinish;
+        }
+        if (succs.length === 0) {
+            task.lateFinish = projectEnd;
+        } else {
+            task.lateFinish = minFinish === Infinity ? projectEnd : minFinish;
+        }
+        task.lateStart = task.lateFinish - task.duration;
+    }
+
+    tasks.forEach(t => {
+        t.totalFloat = t.lateStart - t.earlyStart;
+        t.violatesConstraints = false;
+        t.isCriticalByFloat = Math.abs(t.totalFloat) <= floatTol;
+        t.isNearCritical = !t.isCriticalByFloat && t.totalFloat > floatTol && t.totalFloat <= floatThreshold;
+        t.isCriticalByRel = false;
+    });
+
+    relationships.forEach(rel => {
+        const pred = taskMap.get(rel.predecessorId);
+        const succ = taskMap.get(rel.successorId);
+        if (!pred || !succ) { rel.isCritical = false; return; }
+        if (rel.freeFloat !== null && !isNaN(rel.freeFloat)) {
+            rel.isCritical = rel.freeFloat <= floatTol;
+        } else {
+            const lag = rel.lag || 0;
+            const type = rel.type || 'FS';
+            let isDriving = false;
+            switch (type) {
+                case 'FS': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+                case 'SS': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyStart) <= floatTol; break;
+                case 'FF': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyFinish) <= floatTol; break;
+                case 'SF': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyFinish) <= floatTol; break;
+                default: isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+            }
+            rel.isCritical = isDriving && pred.isCriticalByFloat && succ.isCriticalByFloat;
+        }
+        if (rel.isCritical) {
+            pred.isCriticalByRel = true;
+            succ.isCriticalByRel = true;
+        }
+    });
+
+    tasks.forEach(t => {
+        t.isCritical = t.isCriticalByFloat || t.isCriticalByRel;
+    });
+}
+
 private calculateCPMOffThread(): Promise<void> {
     this.ensureCpmWorker();
     if (!this.cpmWorker) {
@@ -3270,12 +3394,14 @@ private calculateCPMOffThread(): Promise<void> {
             })),
             floatTolerance: this.floatTolerance,
             floatThreshold: this.floatThreshold,
+            unconstrainedMode: this.settings.displayOptions?.unconstrainedMode?.value || false,
         });
     });
 }
 
 private calculateCPM(): void {
-    this.debugLog("Starting schedule-based CPM calculation...");
+    const useUnconstrained = this.settings.displayOptions?.unconstrainedMode?.value || false;
+    this.debugLog(`Starting ${useUnconstrained ? 'unconstrained' : 'schedule-based'} CPM calculation...`);
     const startTime = performance.now();
 
     if (this.allTasksData.length === 0) {
@@ -3290,7 +3416,12 @@ private calculateCPM(): void {
         return;
     }
 
-    this.runScheduleAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
+    const useUnconstrained = this.settings.displayOptions?.unconstrainedMode?.value || false;
+    if (useUnconstrained) {
+        this.runUnconstrainedAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
+    } else {
+        this.runScheduleAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
+    }
 
     const endTime = performance.now();
     this.debugLog(`CPM calculation completed in ${endTime - startTime}ms for ${this.allTasksData.length} tasks.`);
