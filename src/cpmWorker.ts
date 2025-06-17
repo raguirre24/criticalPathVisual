@@ -21,6 +21,7 @@ export interface WorkerInput {
     relationships: WorkerRelationship[];
     floatTolerance: number;
     floatThreshold: number;
+    unconstrainedMode?: boolean;
 }
 
 export interface WorkerTaskResult {
@@ -194,7 +195,157 @@ export function analyzeSchedule(data: WorkerInput): { tasks: WorkerTaskResult[];
     return { tasks: tasksResult, relationships: relResult };
 }
 
+export function analyzeUnconstrained(data: WorkerInput): { tasks: WorkerTaskResult[]; relationships: WorkerRelationshipResult[] } {
+    const tasks = data.tasks.map(t => ({
+        ...t,
+        duration: t.finish - t.start,
+        earlyStart: 0,
+        earlyFinish: (t.finish - t.start),
+        lateStart: 0,
+        lateFinish: 0,
+        totalFloat: 0,
+        violatesConstraints: false,
+        isCritical: false,
+        isCriticalByFloat: false,
+        isCriticalByRel: false,
+        isNearCritical: false,
+    }));
+
+    const taskMap = new Map<string, typeof tasks[0]>();
+    tasks.forEach(t => taskMap.set(t.internalId, t));
+
+    const successors = new Map<string, string[]>();
+    const predecessors = new Map<string, string[]>();
+    data.relationships.forEach(rel => {
+        if (!successors.has(rel.predecessorId)) successors.set(rel.predecessorId, []);
+        successors.get(rel.predecessorId)!.push(rel.successorId);
+        if (!predecessors.has(rel.successorId)) predecessors.set(rel.successorId, []);
+        predecessors.get(rel.successorId)!.push(rel.predecessorId);
+    });
+
+    const inDeg = new Map<string, number>();
+    tasks.forEach(t => inDeg.set(t.internalId, (predecessors.get(t.internalId) || []).length));
+    const queue: string[] = [];
+    inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
+    const topo: string[] = [];
+    while (queue.length) {
+        const id = queue.shift()!;
+        topo.push(id);
+        const succs = successors.get(id) || [];
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const pred = taskMap.get(id)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqStart = 0;
+            switch (relType) {
+                case 'FS': reqStart = pred.earlyFinish + lag; break;
+                case 'SS': reqStart = pred.earlyStart + lag; break;
+                case 'FF': reqStart = pred.earlyFinish - succ.duration + lag; break;
+                case 'SF': reqStart = pred.earlyStart - succ.duration + lag; break;
+                default: reqStart = pred.earlyFinish + lag; break;
+            }
+            succ.earlyStart = Math.max(succ.earlyStart, reqStart);
+            succ.earlyFinish = succ.earlyStart + succ.duration;
+            const nd = inDeg.get(succId)! - 1;
+            inDeg.set(succId, nd);
+            if (nd === 0) queue.push(succId);
+        }
+    }
+
+    const projectEnd = Math.max(...tasks.map(t => t.earlyFinish));
+
+    for (let i = topo.length - 1; i >= 0; i--) {
+        const id = topo[i];
+        const task = taskMap.get(id)!;
+        const succs = successors.get(id) || [];
+        let minFinish = Infinity;
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqFinish = Infinity;
+            switch (relType) {
+                case 'FS': reqFinish = succ.lateStart - lag; break;
+                case 'SS': reqFinish = succ.lateStart - lag + task.duration; break;
+                case 'FF': reqFinish = succ.lateFinish - lag; break;
+                case 'SF': reqFinish = succ.lateFinish - lag - succ.duration + task.duration; break;
+                default: reqFinish = succ.lateStart - lag; break;
+            }
+            if (reqFinish < minFinish) minFinish = reqFinish;
+        }
+        if (succs.length === 0) {
+            task.lateFinish = projectEnd;
+        } else {
+            task.lateFinish = minFinish === Infinity ? projectEnd : minFinish;
+        }
+        task.lateStart = task.lateFinish - task.duration;
+    }
+
+    tasks.forEach(t => {
+        t.totalFloat = t.lateStart - t.earlyStart;
+        t.violatesConstraints = false;
+        t.isCriticalByFloat = Math.abs(t.totalFloat) <= data.floatTolerance;
+        t.isNearCritical = !t.isCriticalByFloat && t.totalFloat > data.floatTolerance && t.totalFloat <= data.floatThreshold;
+        t.isCriticalByRel = false;
+    });
+
+    data.relationships.forEach(rel => {
+        const pred = taskMap.get(rel.predecessorId);
+        const succ = taskMap.get(rel.successorId);
+        if (!pred || !succ) {
+            rel.isCritical = false;
+            return;
+        }
+        if (rel.freeFloat !== null && !isNaN(rel.freeFloat)) {
+            rel.isCritical = rel.freeFloat <= data.floatTolerance;
+        } else {
+            const lag = rel.lag || 0;
+            const type = rel.type || 'FS';
+            let isDriving = false;
+            switch (type) {
+                case 'FS': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= data.floatTolerance; break;
+                case 'SS': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyStart) <= data.floatTolerance; break;
+                case 'FF': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyFinish) <= data.floatTolerance; break;
+                case 'SF': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyFinish) <= data.floatTolerance; break;
+                default: isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= data.floatTolerance; break;
+            }
+            rel.isCritical = isDriving && pred.isCriticalByFloat && succ.isCriticalByFloat;
+        }
+        if (rel.isCritical) {
+            pred.isCriticalByRel = true;
+            succ.isCriticalByRel = true;
+        }
+    });
+
+    tasks.forEach(t => {
+        t.isCritical = t.isCriticalByFloat || t.isCriticalByRel;
+    });
+
+    const tasksResult: WorkerTaskResult[] = tasks.map(t => ({
+        internalId: t.internalId,
+        earlyStart: t.earlyStart,
+        earlyFinish: t.earlyFinish,
+        lateStart: t.lateStart,
+        lateFinish: t.lateFinish,
+        totalFloat: t.totalFloat,
+        violatesConstraints: t.violatesConstraints,
+        isCritical: t.isCritical,
+        isCriticalByFloat: t.isCriticalByFloat,
+        isCriticalByRel: t.isCriticalByRel,
+        isNearCritical: t.isNearCritical,
+    }));
+
+    const relResult: WorkerRelationshipResult[] = data.relationships.map(r => ({
+        predecessorId: r.predecessorId,
+        successorId: r.successorId,
+        isCritical: !!r.isCritical,
+    }));
+    return { tasks: tasksResult, relationships: relResult };
+}
+
 self.onmessage = (event: MessageEvent<WorkerInput>) => {
-    const result = analyzeSchedule(event.data);
+    const input = event.data;
+    const result = input.unconstrainedMode ? analyzeUnconstrained(input) : analyzeSchedule(input);
     (self as any).postMessage(result);
 };

@@ -1,4 +1,4 @@
-import { analyzeSchedule, WorkerInput } from '../src/cpmWorker';
+import { analyzeSchedule, analyzeUnconstrained, WorkerInput } from '../src/cpmWorker';
 
 describe('schedule-based CPM worker', () => {
   test('calculates zero float for aligned successor', () => {
@@ -55,5 +55,25 @@ describe('schedule-based CPM worker', () => {
     const b = result.tasks.find(t => t.internalId === 'B')!;
     expect(b.totalFloat).toBeCloseTo(0);
     expect(b.isCritical).toBeTruthy();
+  });
+
+  test('unconstrained mode gives float for non-driving path', () => {
+    const input: WorkerInput = {
+      tasks: [
+        { internalId: 'A', start: 0, finish: 1, predecessorIds: [], relationshipTypes: {}, relationshipLags: {} },
+        { internalId: 'B', start: 3, finish: 4, predecessorIds: ['A'], relationshipTypes: { A: 'FS' }, relationshipLags: { A: 0 } },
+        { internalId: 'C', start: 0, finish: 5, predecessorIds: [], relationshipTypes: {}, relationshipLags: {} }
+      ],
+      relationships: [
+        { predecessorId: 'A', successorId: 'B', type: 'FS', freeFloat: null, lag: 0 }
+      ],
+      floatTolerance: 0.01,
+      floatThreshold: 1,
+      unconstrainedMode: true
+    };
+    const result = analyzeUnconstrained(input);
+    const b = result.tasks.find(t => t.internalId === 'B')!;
+    expect(b.totalFloat).toBeCloseTo(3);
+    expect(b.violatesConstraints).toBeFalsy();
   });
 });
