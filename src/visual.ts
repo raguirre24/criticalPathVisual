@@ -3416,7 +3416,6 @@ private calculateCPM(): void {
         return;
     }
 
-    const useUnconstrained = this.settings.displayOptions?.unconstrainedMode?.value || false;
     if (useUnconstrained) {
         this.runUnconstrainedAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
     } else {
