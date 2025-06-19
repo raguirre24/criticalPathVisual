@@ -1,0 +1,36 @@
+[33m4096008[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Merge pull request #12 from raguirre24/696t4k-codex/implement-unconstrained-mode-analysis
+[33m1f48bc3[m Merge branch 'main' into 696t4k-codex/implement-unconstrained-mode-analysis
+[33mbcc7f2d[m Expose unconstrained CPM setting
+[33mec4b368[m Merge pull request #11 from raguirre24/codex/implement-unconstrained-mode-analysis
+[33m7f544e6[m Add unconstrained CPM mode
+[33m553106e[m package commit
+[33mdd9ca5c[m Merge pull request #10 from raguirre24/10sp6u-codex/explain-codespace
+[33mc8c5e96[m Add README and basic Jest tests
+[33md560eb1[m apply commit
+[33m6cfd26c[m Merge pull request #9 from raguirre24/codex/explain-codespace
+[33mef648b3[m Implement schedule-based CPM analysis
+[33m8eacaee[m filter fix
+[33md433569[m Merge pull request #8 from raguirre24/codex/explain-and-analyze-codespace-performance
+[33m3dc0c41[m feat: improve CPM performance
+[33m56f299f[m package update
+[33m90e845d[m Merge branch 'main' of https://github.com/raguirre24/criticalPathVisual
+[33m2d95afc[m Merge pull request #7 from raguirre24/ju0vsg-codex/update-capabilities-and-implement-filtering
+[33m409a2ca[m Merge branch 'main' into ju0vsg-codex/update-capabilities-and-implement-filtering
+[33m7bad621[m Fix filter construction
+[33m32ce5bd[m typescript fix
+[33m2293aa3[m Merge pull request #6 from raguirre24/codex/update-capabilities-and-implement-filtering
+[33mdcc0b12[m Enable cross-filtering and task filters
+[33m8de13bb[m Merge pull request #5 from raguirre24/admf1q-codex/add-trace-mode-persistence
+[33m6eb9737[m Restore selected task name in dropdown
+[33m53a6630[m Merge pull request #4 from raguirre24/codex/add-trace-mode-persistence
+[33m4615ca6[m persist trace mode
+[33mb79c667[m Merge pull request #3 from raguirre24/codex/implement-persistence-for-filter-settings
+[33ma11f02c[m Merge branch 'main' into codex/implement-persistence-for-filter-settings
+[33m2728c62[m fix settings persistence
+[33m1fcaf06[m copilot fix
+[33me74621f[m fixes
+[33m0f3f2c5[m Merge pull request #2 from raguirre24/codex/implement-persistence-for-filter-settings
+[33mbdc89a5[m Add persistence for task filters
+[33m219a0fa[m Merge pull request #1 from raguirre24/codex/optimize-performance-for-large-datasets
+[33m075ab33[m Add Web Worker for CPM calculations
+[33m644fd3a[m first commit
