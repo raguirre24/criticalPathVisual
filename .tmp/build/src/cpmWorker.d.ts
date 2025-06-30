@@ -1,6 +1,7 @@
-interface WorkerTask {
+export interface WorkerTask {
     internalId: string;
-    duration: number;
+    start: number;
+    finish: number;
     predecessorIds: string[];
     relationshipTypes: {
         [predId: string]: string;
@@ -9,7 +10,7 @@ interface WorkerTask {
         [predId: string]: number | null;
     };
 }
-interface WorkerRelationship {
+export interface WorkerRelationship {
     predecessorId: string;
     successorId: string;
     type: string;
@@ -17,26 +18,31 @@ interface WorkerRelationship {
     lag: number | null;
     isCritical?: boolean;
 }
-interface WorkerInput {
+export interface WorkerInput {
     tasks: WorkerTask[];
     relationships: WorkerRelationship[];
     floatTolerance: number;
     floatThreshold: number;
 }
-interface WorkerTaskResult {
+export interface WorkerTaskResult {
     internalId: string;
     earlyStart: number;
     earlyFinish: number;
     lateStart: number;
     lateFinish: number;
     totalFloat: number;
+    violatesConstraints: boolean;
     isCritical: boolean;
     isCriticalByFloat: boolean;
     isCriticalByRel: boolean;
     isNearCritical: boolean;
 }
-interface WorkerRelationshipResult {
+export interface WorkerRelationshipResult {
     predecessorId: string;
     successorId: string;
     isCritical: boolean;
 }
+export declare function analyzeSchedule(data: WorkerInput): {
+    tasks: WorkerTaskResult[];
+    relationships: WorkerRelationshipResult[];
+};

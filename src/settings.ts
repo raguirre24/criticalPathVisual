@@ -156,6 +156,12 @@ class DisplayOptionsCard extends Card {
     name: string = "displayOptions"; displayName: string = "Display Options";
     showTooltips = new ToggleSwitch({ name: "showTooltips", displayName: "Show Tooltips", value: true });
 
+    unconstrainedMode = new ToggleSwitch({
+        name: "unconstrainedMode",
+        displayName: "Unconstrained CPM",
+        value: false
+    });
+
     // Hidden property used only for persisting the toggle state
     showAllTasks = new ToggleSwitch({
         name: "showAllTasks",
@@ -166,7 +172,7 @@ class DisplayOptionsCard extends Card {
     });
 
     // Include hidden slice so formatting service reads persisted value
-    slices: Slice[] = [this.showTooltips, this.showAllTasks];
+    slices: Slice[] = [this.showTooltips, this.showAllTasks, this.unconstrainedMode];
 }
 
 class TaskSelectionCard extends Card {

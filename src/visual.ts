@@ -36,6 +36,7 @@ interface Task {
     lateStart: number;         // Calculated by CPM
     lateFinish: number;        // Calculated by CPM
     totalFloat: number;        // Calculated by CPM
+    violatesConstraints?: boolean;
     isCritical: boolean;       // Final CPM criticality
     isCriticalByFloat?: boolean; // Intermediate CPM flag
     isCriticalByRel?: boolean;   // Intermediate CPM flag
@@ -3087,6 +3088,258 @@ private ensureCpmWorker(): void {
     }
 }
 
+private runScheduleAnalysis(tasks: Task[], relationships: Relationship[], floatTol: number, floatThreshold: number): void {
+    if (tasks.length === 0) return;
+    const dayMs = 1000 * 60 * 60 * 24;
+    const base = tasks.reduce((m, t) => Math.min(m, t.startDate ? t.startDate.getTime() : m), Infinity);
+    const taskMap = new Map<string, Task>();
+    tasks.forEach(t => {
+        taskMap.set(t.internalId, t);
+        t.earlyStart = ((t.startDate!.getTime() - base) / dayMs);
+        t.earlyFinish = ((t.finishDate!.getTime() - base) / dayMs);
+        t.duration = t.earlyFinish - t.earlyStart;
+        t.lateStart = t.earlyStart;
+        t.lateFinish = t.earlyFinish;
+        t.totalFloat = 0;
+        t.isCritical = false;
+        t.isCriticalByFloat = false;
+        t.isCriticalByRel = false;
+        t.isNearCritical = false;
+        (t as any).earliestReqStart = t.earlyStart;
+        (t as any).latestReqFinish = t.earlyFinish;
+        (t as any).violatesConstraints = false;
+    });
+
+    const successors = new Map<string, string[]>();
+    relationships.forEach(r => {
+        if (!successors.has(r.predecessorId)) successors.set(r.predecessorId, []);
+        successors.get(r.predecessorId)!.push(r.successorId);
+    });
+
+    const inDeg = new Map<string, number>();
+    tasks.forEach(t => inDeg.set(t.internalId, t.predecessorIds.length));
+    const queue: string[] = [];
+    inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
+    const topo: string[] = [];
+    while (queue.length) {
+        const id = queue.shift()!;
+        topo.push(id);
+        const succs = successors.get(id) || [];
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const pred = taskMap.get(id)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let req = (succ as any).earliestReqStart;
+            switch (relType) {
+                case 'FS': req = Math.max(req, pred.earlyFinish + lag); break;
+                case 'SS': req = Math.max(req, pred.earlyStart + lag); break;
+                case 'FF': req = Math.max(req, pred.earlyFinish - succ.duration + lag); break;
+                case 'SF': req = Math.max(req, pred.earlyStart - succ.duration + lag); break;
+                default: req = Math.max(req, pred.earlyFinish + lag); break;
+            }
+            (succ as any).earliestReqStart = req;
+            const nd = inDeg.get(succId)! - 1;
+            inDeg.set(succId, nd);
+            if (nd === 0) queue.push(succId);
+        }
+    }
+
+    for (let i = topo.length - 1; i >= 0; i--) {
+        const id = topo[i];
+        const task = taskMap.get(id)!;
+        const succs = successors.get(id) || [];
+        if (succs.length === 0) continue;
+        let minFinish = Infinity;
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqFinish = Infinity;
+            switch (relType) {
+                case 'FS': reqFinish = succ.earlyStart - lag; break;
+                case 'SS': reqFinish = succ.earlyStart - lag + task.duration; break;
+                case 'FF': reqFinish = succ.earlyFinish - lag; break;
+                case 'SF': reqFinish = succ.earlyFinish - lag - succ.duration + task.duration; break;
+                default: reqFinish = succ.earlyStart - lag; break;
+            }
+            if (reqFinish < minFinish) minFinish = reqFinish;
+        }
+        if (minFinish !== Infinity) {
+            (task as any).latestReqFinish = Math.min(task.earlyFinish, minFinish);
+        }
+    }
+
+    tasks.forEach(t => {
+        const est = (t as any).earliestReqStart as number;
+        const lrf = (t as any).latestReqFinish as number;
+        const startSlack = t.earlyStart - est;
+        const finishSlack = lrf - t.earlyFinish;
+        t.totalFloat = Math.min(startSlack, finishSlack);
+        t.lateFinish = t.earlyFinish + Math.max(0, t.totalFloat);
+        t.lateStart = t.lateFinish - t.duration;
+        (t as any).violatesConstraints = t.totalFloat < -floatTol;
+        t.isCriticalByFloat = Math.abs(t.totalFloat) <= floatTol && !(t as any).violatesConstraints;
+        t.isNearCritical = !t.isCriticalByFloat && !(t as any).violatesConstraints && t.totalFloat > floatTol && t.totalFloat <= floatThreshold;
+        t.isCriticalByRel = false;
+        t.isCritical = false;
+    });
+
+    relationships.forEach(rel => {
+        const pred = taskMap.get(rel.predecessorId);
+        const succ = taskMap.get(rel.successorId);
+        if (!pred || !succ) { rel.isCritical = false; return; }
+        if (rel.freeFloat !== null && !isNaN(rel.freeFloat)) {
+            rel.isCritical = rel.freeFloat <= floatTol;
+        } else {
+            const lag = rel.lag || 0;
+            const type = rel.type || 'FS';
+            let isDriving = false;
+            switch (type) {
+                case 'FS': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+                case 'SS': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyStart) <= floatTol; break;
+                case 'FF': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyFinish) <= floatTol; break;
+                case 'SF': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyFinish) <= floatTol; break;
+                default: isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+            }
+            rel.isCritical = isDriving && pred.isCriticalByFloat && succ.isCriticalByFloat;
+        }
+        if (rel.isCritical) {
+            pred.isCriticalByRel = true;
+            succ.isCriticalByRel = true;
+        }
+    });
+
+    tasks.forEach(t => {
+        const violates = (t as any).violatesConstraints;
+        t.isCritical = (t.isCriticalByFloat && !violates) || t.isCriticalByRel;
+    });
+}
+
+private runUnconstrainedAnalysis(tasks: Task[], relationships: Relationship[], floatTol: number, floatThreshold: number): void {
+    if (tasks.length === 0) return;
+
+    const taskMap = new Map<string, Task>();
+    tasks.forEach(t => {
+        taskMap.set(t.internalId, t);
+        // reset
+        t.earlyStart = 0;
+        t.earlyFinish = t.duration;
+        t.lateStart = 0;
+        t.lateFinish = 0;
+        t.totalFloat = 0;
+        t.isCritical = false;
+        t.isCriticalByFloat = false;
+        t.isCriticalByRel = false;
+        t.isNearCritical = false;
+    });
+
+    const successors = new Map<string, string[]>();
+    const predecessors = new Map<string, string[]>();
+    relationships.forEach(r => {
+        if (!successors.has(r.predecessorId)) successors.set(r.predecessorId, []);
+        successors.get(r.predecessorId)!.push(r.successorId);
+        if (!predecessors.has(r.successorId)) predecessors.set(r.successorId, []);
+        predecessors.get(r.successorId)!.push(r.predecessorId);
+    });
+
+    const inDeg = new Map<string, number>();
+    tasks.forEach(t => inDeg.set(t.internalId, (predecessors.get(t.internalId) || []).length));
+    const queue: string[] = [];
+    inDeg.forEach((d, id) => { if (d === 0) queue.push(id); });
+    const topo: string[] = [];
+    while (queue.length) {
+        const id = queue.shift()!;
+        topo.push(id);
+        const succs = successors.get(id) || [];
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const pred = taskMap.get(id)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqStart = 0;
+            switch (relType) {
+                case 'FS': reqStart = pred.earlyFinish + lag; break;
+                case 'SS': reqStart = pred.earlyStart + lag; break;
+                case 'FF': reqStart = pred.earlyFinish - succ.duration + lag; break;
+                case 'SF': reqStart = pred.earlyStart - succ.duration + lag; break;
+                default: reqStart = pred.earlyFinish + lag; break;
+            }
+            succ.earlyStart = Math.max(succ.earlyStart, reqStart);
+            succ.earlyFinish = succ.earlyStart + succ.duration;
+            const nd = inDeg.get(succId)! - 1;
+            inDeg.set(succId, nd);
+            if (nd === 0) queue.push(succId);
+        }
+    }
+
+    const projectEnd = Math.max(...tasks.map(t => t.earlyFinish));
+
+    for (let i = topo.length - 1; i >= 0; i--) {
+        const id = topo[i];
+        const task = taskMap.get(id)!;
+        const succs = successors.get(id) || [];
+        let minFinish = Infinity;
+        for (const succId of succs) {
+            const succ = taskMap.get(succId)!;
+            const relType = succ.relationshipTypes[id] || 'FS';
+            const lag = succ.relationshipLags[id] ?? 0;
+            let reqFinish = Infinity;
+            switch (relType) {
+                case 'FS': reqFinish = succ.lateStart - lag; break;
+                case 'SS': reqFinish = succ.lateStart - lag + task.duration; break;
+                case 'FF': reqFinish = succ.lateFinish - lag; break;
+                case 'SF': reqFinish = succ.lateFinish - lag - succ.duration + task.duration; break;
+                default: reqFinish = succ.lateStart - lag; break;
+            }
+            if (reqFinish < minFinish) minFinish = reqFinish;
+        }
+        if (succs.length === 0) {
+            task.lateFinish = projectEnd;
+        } else {
+            task.lateFinish = minFinish === Infinity ? projectEnd : minFinish;
+        }
+        task.lateStart = task.lateFinish - task.duration;
+    }
+
+    tasks.forEach(t => {
+        t.totalFloat = t.lateStart - t.earlyStart;
+        t.violatesConstraints = false;
+        t.isCriticalByFloat = Math.abs(t.totalFloat) <= floatTol;
+        t.isNearCritical = !t.isCriticalByFloat && t.totalFloat > floatTol && t.totalFloat <= floatThreshold;
+        t.isCriticalByRel = false;
+    });
+
+    relationships.forEach(rel => {
+        const pred = taskMap.get(rel.predecessorId);
+        const succ = taskMap.get(rel.successorId);
+        if (!pred || !succ) { rel.isCritical = false; return; }
+        if (rel.freeFloat !== null && !isNaN(rel.freeFloat)) {
+            rel.isCritical = rel.freeFloat <= floatTol;
+        } else {
+            const lag = rel.lag || 0;
+            const type = rel.type || 'FS';
+            let isDriving = false;
+            switch (type) {
+                case 'FS': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+                case 'SS': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyStart) <= floatTol; break;
+                case 'FF': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyFinish) <= floatTol; break;
+                case 'SF': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyFinish) <= floatTol; break;
+                default: isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= floatTol; break;
+            }
+            rel.isCritical = isDriving && pred.isCriticalByFloat && succ.isCriticalByFloat;
+        }
+        if (rel.isCritical) {
+            pred.isCriticalByRel = true;
+            succ.isCriticalByRel = true;
+        }
+    });
+
+    tasks.forEach(t => {
+        t.isCritical = t.isCriticalByFloat || t.isCriticalByRel;
+    });
+}
+
 private calculateCPMOffThread(): Promise<void> {
     this.ensureCpmWorker();
     if (!this.cpmWorker) {
@@ -3105,6 +3358,7 @@ private calculateCPMOffThread(): Promise<void> {
                     task.lateStart = res.lateStart;
                     task.lateFinish = res.lateFinish;
                     task.totalFloat = res.totalFloat;
+                    task.violatesConstraints = res.violatesConstraints;
                     task.isCritical = res.isCritical;
                     task.isCriticalByFloat = res.isCriticalByFloat;
                     task.isCriticalByRel = res.isCriticalByRel;
@@ -3120,10 +3374,13 @@ private calculateCPMOffThread(): Promise<void> {
             resolve();
         };
         this.cpmWorker!.addEventListener('message', handler);
+        const base = this.allTasksData.reduce((m, t) => Math.min(m, t.startDate ? t.startDate.getTime() : m), Infinity);
+        const dayMs = 1000 * 60 * 60 * 24;
         this.cpmWorker!.postMessage({
             tasks: this.allTasksData.map(t => ({
                 internalId: t.internalId,
-                duration: t.duration,
+                start: t.startDate ? (t.startDate.getTime() - base) / dayMs : 0,
+                finish: t.finishDate ? (t.finishDate.getTime() - base) / dayMs : 0,
                 predecessorIds: t.predecessorIds,
                 relationshipTypes: t.relationshipTypes,
                 relationshipLags: t.relationshipLags,
@@ -3137,500 +3394,77 @@ private calculateCPMOffThread(): Promise<void> {
             })),
             floatTolerance: this.floatTolerance,
             floatThreshold: this.floatThreshold,
+            unconstrainedMode: this.settings.displayOptions?.unconstrainedMode?.value || false,
         });
     });
 }
 
 private calculateCPM(): void {
-    this.debugLog("Starting optimized CPM calculation...");
+    const useUnconstrained = this.settings.displayOptions?.unconstrainedMode?.value || false;
+    this.debugLog(`Starting ${useUnconstrained ? 'unconstrained' : 'schedule-based'} CPM calculation...`);
     const startTime = performance.now();
-    
-    if (this.allTasksData.length === 0) { 
-        this.debugLog("No tasks for CPM."); 
-        return; 
-    }
-    
-    const tasksToProcess = this.allTasksData;
 
-    // Detect cycles before proceeding
+    if (this.allTasksData.length === 0) {
+        this.debugLog("No tasks for CPM.");
+        return;
+    }
+
     const cycleCheck = this.detectAndReportCycles();
     if (cycleCheck.hasCycles) {
         console.error("Cannot calculate critical path: Circular dependencies detected!");
         this.displayMessage("Error: Circular dependencies in schedule. Please fix before selecting tasks.");
         return;
     }
-    
-    // Reset task values first
-    tasksToProcess.forEach(task => {
-        task.earlyStart = 0;
-        task.earlyFinish = task.duration;
-        task.lateStart = Infinity;
-        task.lateFinish = Infinity;
-        task.totalFloat = Infinity;
-        task.isCritical = false;
-        task.isCriticalByFloat = false;
-        task.isCriticalByRel = false;
-        task.isNearCritical = false;
-    });
-    
-    // Perform forward pass with optimization
-    const sortedTasks = this.performOptimizedForwardPass(tasksToProcess);
-    
-    // Calculate project end date
-    const projectEndDate = this.calculateCriticalPathDuration(tasksToProcess);
-    this.debugLog(`Project End Date (CPM Day): ${projectEndDate}`);
-    
-    // Perform backward pass with optimization
-    this.performOptimizedBackwardPass(tasksToProcess, projectEndDate);
-    
-    // --- Calculate Float and Criticality with batch processing ---
-    this.debugLog("Calculating floats and criticality...");
-    
-    // Pre-calculate floats for all tasks in a single pass
-    const taskFloatMap = new Map<string, number>();
-    
-    tasksToProcess.forEach((task: Task) => {
-        if (task.lateStart === undefined || isNaN(task.lateStart) || task.lateStart === Infinity ||
-            task.earlyStart === undefined || isNaN(task.earlyStart)) {
-            task.totalFloat = Infinity;
-            task.isCriticalByFloat = false;
-            task.isNearCritical = false;
-        } else {
-            task.totalFloat = Math.max(0, task.lateStart - task.earlyStart);
-            taskFloatMap.set(task.internalId, task.totalFloat);
-            task.isCriticalByFloat = task.totalFloat <= this.floatTolerance;
-            task.isNearCritical = !task.isCriticalByFloat && 
-                                task.totalFloat > this.floatTolerance && 
-                                task.totalFloat <= this.floatThreshold;
-        }
-        task.isCriticalByRel = false; // Reset relationship flag
-    });
-    
-    // Process relationships with their criticality using cached floats
-    const criticalRelationships = new Set<string>();
-    
-    this.relationships.forEach((rel: Relationship) => {
-        const pred = this.taskIdToTask.get(rel.predecessorId);
-        const succ = this.taskIdToTask.get(rel.successorId);
-        
-        // Skip invalid relationships
-        if (!pred || !succ ||
-            pred.earlyFinish === undefined || isNaN(pred.earlyFinish) || 
-            pred.earlyStart === undefined || isNaN(pred.earlyStart) ||
-            succ.earlyStart === undefined || isNaN(succ.earlyStart) || 
-            succ.earlyFinish === undefined || isNaN(succ.earlyFinish) ||
-            pred.isCriticalByFloat === undefined || succ.isCriticalByFloat === undefined) {
-            rel.isCritical = false;
-            return;
-        }
-        
-        // Use Free Float if provided
-        if (rel.freeFloat !== null && !isNaN(rel.freeFloat)) {
-            rel.isCritical = rel.freeFloat <= this.floatTolerance;
-        } else {
-            // Check if relationship is 'driving'
-            const relType = rel.type || 'FS';
-            const lag = rel.lag || 0;
-            
-            // Calculate if the relationship is driving
-            let isDriving = false;
-            try {
-                switch (relType) {
-                    case 'FS': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= this.floatTolerance; break;
-                    case 'SS': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyStart) <= this.floatTolerance; break;
-                    case 'FF': isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyFinish) <= this.floatTolerance; break;
-                    case 'SF': isDriving = Math.abs((pred.earlyStart + lag) - succ.earlyFinish) <= this.floatTolerance; break;
-                    default: isDriving = Math.abs((pred.earlyFinish + lag) - succ.earlyStart) <= this.floatTolerance;
-                }
-            } catch (e) { 
-                isDriving = false; 
-            }
-            
-            // Relationship is critical if driving AND connects two tasks critical by float
-            rel.isCritical = isDriving && pred.isCriticalByFloat && succ.isCriticalByFloat;
-        }
-        
-        // Mark connected tasks as critical by relationship if the relationship is critical
-        if (rel.isCritical) {
-            criticalRelationships.add(rel.predecessorId);
-            criticalRelationships.add(rel.successorId);
-        }
-    });
-    
-    // Apply critical relationship flags
-    criticalRelationships.forEach(taskId => {
-        const task = this.taskIdToTask.get(taskId);
-        if (task) {
-            task.isCriticalByRel = true;
-        }
-    });
-    
-    // Determine final criticality in a single pass
-    tasksToProcess.forEach((task: Task) => {
-        if (task.totalFloat !== undefined && !isNaN(task.totalFloat) && task.totalFloat !== Infinity) {
-            task.isCritical = task.isCriticalByFloat || (task.isCriticalByRel ?? false);
-            task.isNearCritical = !task.isCritical && 
-                                task.totalFloat > this.floatTolerance && 
-                                task.totalFloat <= this.floatThreshold;
-        } else {
-            task.isCritical = task.isCriticalByRel ?? false;
-            task.isNearCritical = false;
-        }
-    });
-    
+
+    if (useUnconstrained) {
+        this.runUnconstrainedAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
+    } else {
+        this.runScheduleAnalysis(this.allTasksData, this.relationships, this.floatTolerance, this.floatThreshold);
+    }
+
     const endTime = performance.now();
-    this.debugLog(`CPM calculation completed in ${endTime - startTime}ms for ${tasksToProcess.length} tasks.`);
-    this.debugLog(`Found ${tasksToProcess.filter(t => t.isCritical).length} critical tasks and ${tasksToProcess.filter(t => t.isNearCritical).length} near-critical tasks.`);
+    this.debugLog(`CPM calculation completed in ${endTime - startTime}ms for ${this.allTasksData.length} tasks.`);
 }
 
 private calculateCPMToTask(targetTaskId: string | null): void {
-    this.debugLog(`Calculating optimized CPM to task: ${targetTaskId || "None (full project)"}`);
+    this.debugLog(`Calculating schedule-based CPM to task: ${targetTaskId || "None (full project)"}`);
     const startTime = performance.now();
-    
-    if (this.allTasksData.length === 0) { 
-        this.debugLog("No tasks for CPM."); 
-        return; 
+
+    if (this.allTasksData.length === 0) {
+        this.debugLog("No tasks for CPM.");
+        return;
     }
 
-    // If no specific task is selected, use the standard CPM calculation
+    this.calculateCPM();
+
     if (!targetTaskId) {
-        this.calculateCPM();
-        return;
-    }
-    
-    const targetTask = this.taskIdToTask.get(targetTaskId);
-    if (!targetTask) {
-        console.warn(`Target task ${targetTaskId} not found. Falling back to full project CPM.`);
-        this.calculateCPM();
-        return;
-    }
-    
-    const tasksToProcess = this.allTasksData;
-    const taskMap = this.taskIdToTask;
-    
-    // Detect cycles before proceeding
-    const cycleCheck = this.detectAndReportCycles();
-    if (cycleCheck.hasCycles) {
-        console.error("Cannot calculate critical path to task: Circular dependencies detected!");
-        this.displayMessage("Error: Circular dependencies in schedule. Please fix before selecting tasks.");
         return;
     }
 
-    // Reset CPM values for all tasks
-    tasksToProcess.forEach((task: Task) => {
-        task.predecessors = task.predecessorIds
-            .map(id => taskMap.get(id))
-            .filter(t => t !== undefined) as Task[];
-            
-        // Reset calculated values
-        task.earlyStart = 0;
-        task.earlyFinish = task.duration;
-        task.lateStart = Infinity;
-        task.lateFinish = Infinity;
-        task.totalFloat = Infinity;
-        task.isCritical = false;
-        task.isCriticalByFloat = false;
-        task.isCriticalByRel = false;
-        task.isNearCritical = false;
-    });
-
-    // --- Use cached predecessor information for efficiency ---
     const tasksInPathToTarget = this.identifyAllPredecessorTasksOptimized(targetTaskId);
-    this.debugLog(`Identified ${tasksInPathToTarget.size} tasks in path to target`);
-
-    // --- Forward Pass (optimized for subset) ---
-    const sortedTasks = this.performOptimizedForwardPass(
-        Array.from(tasksInPathToTarget).map(id => this.taskIdToTask.get(id)!).filter(t => t !== undefined)
-    );
-    
-    // --- Modified Backward Pass (starting from target task) ---
-    // Set target task as the endpoint
-    targetTask.lateFinish = targetTask.earlyFinish;
-    targetTask.lateStart = targetTask.earlyStart;
-    
-    // Process tasks in reverse topological order
-    const reverseSortedTasks = [...sortedTasks].reverse();
-    for (const task of reverseSortedTasks) {
-        // Skip tasks not in the path to target and tasks already processed (target)
-        if (!tasksInPathToTarget.has(task.internalId) || task.internalId === targetTaskId) {
-            continue;
-        }
-        
-        let minSuccessorRequirement = Infinity;
-        let hasValidSuccessor = false;
-        
-        // Use cached successor information
-        const successors = this.predecessorIndex.get(task.internalId) || new Set();
-        
-        for (const successorId of successors) {
-            if (!tasksInPathToTarget.has(successorId)) {
-                continue;
-            }
-            
-            const successor = this.taskIdToTask.get(successorId);
-            if (!successor || successor.lateStart === undefined || isNaN(successor.lateStart) || 
-                successor.lateStart === Infinity || successor.lateFinish === undefined || 
-                isNaN(successor.lateFinish)) {
-                continue;
-            }
-
-            hasValidSuccessor = true;
-            const relationshipType = successor.relationshipTypes[task.internalId] || 'FS';
-            const lag = successor.relationshipLags[task.internalId] || 0;
-            
-            let requiredFinishTime = Infinity;
-            
-            switch (relationshipType) {
-                case 'FS': requiredFinishTime = successor.lateStart - lag; break;
-                case 'SS': requiredFinishTime = successor.lateStart - lag + task.duration; break;
-                case 'FF': requiredFinishTime = successor.lateFinish - lag; break;
-                case 'SF': requiredFinishTime = successor.lateFinish - lag - successor.duration + task.duration; break;
-                default: requiredFinishTime = successor.lateStart - lag;
-            }
-
-            minSuccessorRequirement = Math.min(minSuccessorRequirement, requiredFinishTime);
-        }
-
-        if (hasValidSuccessor && minSuccessorRequirement !== Infinity) {
-            task.lateFinish = minSuccessorRequirement;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
-        } else {
-            // If no valid successors on path to target, use early times
-            task.lateFinish = task.earlyFinish;
-            task.lateStart = task.earlyStart;
-        }
-    }
-    
-    // --- Calculate Float and Criticality (optimized for subset) ---
     this.calculateFloatAndCriticalityForSubset(tasksInPathToTarget, targetTaskId);
-    
-    const endTime = performance.now();
-    this.debugLog(`CPM to task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
-}
 
+    const endTime = performance.now();
+    this.debugLog(`CPM to task ${targetTaskId} completed in ${endTime - startTime}ms.`);
+}
 private calculateCPMFromTask(targetTaskId: string | null): void {
-    this.debugLog(`Calculating optimized forward CPM from task: ${targetTaskId || "None (full project)"}`);
+    this.debugLog(`Calculating schedule-based forward CPM from task: ${targetTaskId || "None (full project)"}`);
     const startTime = performance.now();
-    
-    if (this.allTasksData.length === 0) { 
-        this.debugLog("No tasks for CPM."); 
-        return; 
+    if (this.allTasksData.length === 0) {
+        this.debugLog("No tasks for CPM.");
+        return;
     }
-
-    // If no specific task is selected, use the standard CPM calculation
+    this.calculateCPM();
     if (!targetTaskId) {
-        this.calculateCPM();
         return;
     }
-    
-    const sourceTask = this.taskIdToTask.get(targetTaskId);
-    if (!sourceTask) {
-        console.warn(`Source task ${targetTaskId} not found. Falling back to full project CPM.`);
-        this.calculateCPM();
-        return;
-    }
-    
-    const tasksToProcess = this.allTasksData;
-    const taskMap = this.taskIdToTask;
-
-    // Detect cycles before proceeding
-    const cycleCheck = this.detectAndReportCycles();
-    if (cycleCheck.hasCycles) {
-        console.error("Cannot calculate critical path from task: Circular dependencies detected!");
-        this.displayMessage("Error: Circular dependencies in schedule. Please fix before selecting tasks.");
-        return;
-    } 
-    
-    // Reset CPM values for all tasks
-    tasksToProcess.forEach((task: Task) => {
-        task.predecessors = task.predecessorIds
-            .map(id => taskMap.get(id))
-            .filter(t => t !== undefined) as Task[];
-            
-        // Reset calculated values
-        task.earlyStart = 0;
-        task.earlyFinish = task.duration;
-        task.lateStart = Infinity;
-        task.lateFinish = Infinity;
-        task.totalFloat = Infinity;
-        task.isCritical = false;
-        task.isCriticalByFloat = false;
-        task.isCriticalByRel = false;
-        task.isNearCritical = false;
-    });
-
-    // --- Use cached successor information for efficiency ---
-    const tasksInPathFromTarget = this.identifyAllSuccessorTasksOptimized(targetTaskId);
-    this.debugLog(`Identified ${tasksInPathFromTarget.size} tasks that follow from target task`);
-
-    // Set the selected task as the starting point
-    sourceTask.earlyStart = 0;
-    sourceTask.earlyFinish = sourceTask.duration;
-    
-    // Process tasks in topological order, but only consider those in path from target
-    const sortedTasks = this.topologicalSortOptimized(tasksToProcess);
-    
-    // Find the index of the source task in the sorted list
-    const sourceTaskIndex = sortedTasks.findIndex(task => task.internalId === targetTaskId);
-    if (sourceTaskIndex === -1) {
-        console.warn("Source task not found in topological sort.");
-        return;
-    }
-    
-    // Process only the source task and tasks after it in the topological order
-    const tasksToConsider = sortedTasks.slice(sourceTaskIndex);
-    
-    // Forward pass from source task
-    for (const task of tasksToConsider) {
-        // Skip tasks that aren't in the path from target
-        if (!tasksInPathFromTarget.has(task.internalId)) {
-            continue;
-        }
-        
-        // For the source task, keep the early dates as initialized
-        if (task.internalId === targetTaskId) {
-            continue;
-        }
-        
-        // For successor tasks, calculate early dates based on predecessors
-        let maxPredFinish = 0;
-        let hasPredInPath = false;
-        
-        for (const pred of task.predecessors) {
-            // Only consider predecessors that are in the path from target
-            if (!tasksInPathFromTarget.has(pred.internalId)) {
-                continue;
-            }
-            
-            if (pred.earlyFinish === undefined || isNaN(pred.earlyFinish) || 
-                pred.earlyStart === undefined || isNaN(pred.earlyStart)) {
-                continue;
-            }
-            
-            hasPredInPath = true;
-            const relType = task.relationshipTypes[pred.internalId] || 'FS';
-            const lag = task.relationshipLags[pred.internalId] || 0;
-            
-            let potentialStart = 0;
-            
-            switch(relType) {
-                case 'FS': potentialStart = pred.earlyFinish + lag; break;
-                case 'SS': potentialStart = pred.earlyStart + lag; break;
-                case 'FF': potentialStart = pred.earlyFinish - task.duration + lag; break;
-                case 'SF': potentialStart = pred.earlyStart - task.duration + lag; break;
-            }
-            
-            maxPredFinish = Math.max(maxPredFinish, potentialStart);
-        }
-        
-        if (hasPredInPath) {
-            task.earlyStart = Math.max(0, maxPredFinish);
-            task.earlyFinish = task.earlyStart + task.duration;
-        } else {
-            // If no valid predecessors in path, set to Infinity (not reachable from source)
-            task.earlyStart = Infinity;
-            task.earlyFinish = Infinity;
-        }
-    }
-    
-    // Find the latest finish date among tasks in the path
-    let maxFinish = 0;
-    tasksToProcess.forEach(task => {
-        if (tasksInPathFromTarget.has(task.internalId) && 
-            task.earlyFinish !== undefined && !isNaN(task.earlyFinish) && 
-            task.earlyFinish !== Infinity) {
-            maxFinish = Math.max(maxFinish, task.earlyFinish);
-        }
-    });
-    
-    // --- Backward Pass (optimized) ---
-    // Set late finish for all end tasks (no successors in the path)
-    tasksToProcess.forEach(task => {
-        if (!tasksInPathFromTarget.has(task.internalId)) {
-            // Skip tasks not in path
-            return;
-        }
-        
-        // Check if this task has any successors in the path
-        const successorSet = this.predecessorIndex.get(task.internalId) || new Set<string>();
-        const successorsInPath = Array.from(successorSet)
-            .filter((succId: string) => tasksInPathFromTarget.has(succId));
-        
-        if (successorsInPath.length === 0 && task.earlyFinish !== undefined && 
-            !isNaN(task.earlyFinish) && task.earlyFinish !== Infinity) {
-            // This is an end task in the path
-            task.lateFinish = maxFinish;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
-        }
-    });
-    
-    // Process tasks in reverse topological order
-    const reverseSortedTasks = [...sortedTasks].reverse();
-    
-    for (const task of reverseSortedTasks) {
-        // Skip tasks not in path from target
-        if (!tasksInPathFromTarget.has(task.internalId)) {
-            continue;
-        }
-        
-        // Skip end tasks (already processed)
-        if (task.lateFinish !== Infinity) {
-            continue;
-        }
-        
-        let minSuccessorRequirement = Infinity;
-        let hasValidSuccessorInPath = false;
-        
-        // Use cached successor information
-        const successorIds = this.predecessorIndex.get(task.internalId) || new Set();
-        
-        for (const successorId of successorIds) {
-            // Only consider successors in the path
-            if (!tasksInPathFromTarget.has(successorId)) {
-                continue;
-            }
-            
-            const successor = this.taskIdToTask.get(successorId);
-            if (!successor || successor.lateStart === undefined || isNaN(successor.lateStart) || 
-                successor.lateStart === Infinity || successor.lateFinish === undefined || 
-                isNaN(successor.lateFinish) || successor.lateFinish === Infinity) {
-                continue;
-            }
-            
-            hasValidSuccessorInPath = true;
-            const relationshipType = successor.relationshipTypes[task.internalId] || 'FS';
-            const lag = successor.relationshipLags[task.internalId] || 0;
-            
-            let requiredFinishTime = Infinity;
-            
-            switch (relationshipType) {
-                case 'FS': requiredFinishTime = successor.lateStart - lag; break;
-                case 'SS': requiredFinishTime = successor.lateStart - lag + task.duration; break;
-                case 'FF': requiredFinishTime = successor.lateFinish - lag; break;
-                case 'SF': requiredFinishTime = successor.lateFinish - lag - successor.duration + task.duration; break;
-                default: requiredFinishTime = successor.lateStart - lag;
-            }
-            
-            minSuccessorRequirement = Math.min(minSuccessorRequirement, requiredFinishTime);
-        }
-        
-        if (hasValidSuccessorInPath && minSuccessorRequirement !== Infinity) {
-            task.lateFinish = minSuccessorRequirement;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
-        } else if (task.earlyFinish !== undefined && !isNaN(task.earlyFinish) && 
-                task.earlyFinish !== Infinity) {
-            // If no valid successors but task is in path, use maxFinish
-            task.lateFinish = maxFinish;
-            task.lateStart = Math.max(0, task.lateFinish - task.duration);
-        }
-    }
-    
-    // --- Calculate Float and Criticality (optimized for subset) ---
-    this.calculateFloatAndCriticalityForSubset(tasksInPathFromTarget, targetTaskId);
-    
+    const tasksInPath = this.identifyAllSuccessorTasksOptimized(targetTaskId);
+    this.calculateFloatAndCriticalityForSubset(tasksInPath, targetTaskId);
     const endTime = performance.now();
-    this.debugLog(`CPM forward from task ${targetTaskId} completed in ${endTime - startTime}ms. ${tasksToProcess.filter(t => t.isCritical).length} critical tasks identified.`);
+    this.debugLog(`CPM forward from task ${targetTaskId} completed in ${endTime - startTime}ms.`);
 }
+
+
 
 private topologicalSortOptimized(tasks: Task[]): Task[] {
     this.debugLog("Starting optimized topological sort...");
@@ -4146,26 +3980,28 @@ private createTaskFromRow(row: any[], rowIndex: number): Task | null {
         ? String(row[typeIdx]).trim() 
         : 'TT_Task';
     
-    // Parse duration
+    // Parse dates
+    const startDate = (startDateIdx !== -1 && row[startDateIdx] != null)
+        ? this.parseDate(row[startDateIdx])
+        : null;
+    const finishDate = (finishDateIdx !== -1 && row[finishDateIdx] != null)
+        ? this.parseDate(row[finishDateIdx])
+        : null;
+
+    // Parse duration (optional)
     let duration = 0;
     if (durationIdx !== -1 && row[durationIdx] != null) {
         const parsedDuration = Number(row[durationIdx]);
         if (!isNaN(parsedDuration) && isFinite(parsedDuration)) {
             duration = parsedDuration;
         }
+    } else if (startDate instanceof Date && finishDate instanceof Date) {
+        duration = (finishDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
     }
     if (taskType === 'TT_Mile' || taskType === 'TT_FinMile') {
         duration = 0;
     }
     duration = Math.max(0, duration);
-    
-    // Parse dates
-    const startDate = (startDateIdx !== -1 && row[startDateIdx] != null) 
-        ? this.parseDate(row[startDateIdx]) 
-        : null;
-    const finishDate = (finishDateIdx !== -1 && row[finishDateIdx] != null) 
-        ? this.parseDate(row[finishDateIdx]) 
-        : null;
     
     // Get tooltip data
     const tooltipData = this.extractTooltipData(row, dataView);
@@ -4460,13 +4296,11 @@ private transformDataOptimized(dataView: DataView): void {
             return false;
         }
         const hasId = this.hasDataRole(dataView, 'taskId');
-        const hasDur = this.hasDataRole(dataView, 'duration');
         const hasStartDate = this.hasDataRole(dataView, 'startDate');
         const hasFinishDate = this.hasDataRole(dataView, 'finishDate');
 
         let isValid = true;
         if (!hasId) { console.warn("validateDataView: Missing 'taskId' data role."); isValid = false; }
-        if (!hasDur) { console.warn("validateDataView: Missing 'duration' data role (needed for CPM)."); isValid = false; }
         if (!hasStartDate) { console.warn("validateDataView: Missing 'startDate' data role (needed for plotting)."); isValid = false; }
         if (!hasFinishDate) { console.warn("validateDataView: Missing 'finishDate' data role (needed for plotting)."); isValid = false; }
 
